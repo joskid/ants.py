@@ -1,0 +1,5 @@
+game_logs
+tools
+*.pyc
+*.sh
+*.zip

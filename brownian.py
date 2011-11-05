@@ -18,5 +18,5 @@ class Decider(object):
         d = list('NESW=')
         for loc in myant:
             random.shuffle(d)
-            mine[loc] = d[:]
+            myant[loc] = d[:]
         return myant

@@ -1,19 +1,19 @@
 # stdlib
-from math import sqrt
-from random import seed
-from collections import defaultdict
+from datetime import datetime as DateTime
+from math import sqrt as math_sqrt
+from random import seed as random_seed
+from collections import defaultdict as collections_defaultdict
+
+
+# ant property identifier suffixes:
+#   O=oldloc
+#   N=newloc
+#   I=identity
+#   V=vectorlist
+#   D=vector(direction)
 
 
 ###############################################################################
-
-
-MAPCHARS = {
-    'water' : lambda o: '#',
-    'food'  : lambda o: '*',
-    'hill'  : lambda o: str(o),
-    'ant'   : lambda o: chr(97 + o),
-    'see'   : lambda o: ' ',
-}
 
 
 DISPLACE = {
@@ -30,8 +30,8 @@ DISPLACE = {
 
 def inradius(a, radius2, b):
     '''Is loc 'a' within the squared-radius of loc 'b'?'''
-    return (locb[0] - loca[0]) ** 2 + \
-           (locb[1] - loca[1]) ** 2 <= radius2
+    return (a[0] - b[0]) ** 2 + \
+           (a[1] - b[1]) ** 2 <= radius2
 
 
 def allinradius(radius, radius2, loc):
@@ -90,7 +90,7 @@ class Bot(object):
         -- will be called for each game turn
         -- arguments are as follows:
 
-            Each argument is a dictionary mapping (row, col) locations to
+            Most arguments are dictionaries mapping (row, col) locations to
             either boolean or integer values.
 
             dirt        True
@@ -98,7 +98,9 @@ class Bot(object):
             enemyhill   int (owner)
             enemyant    int (owner)
             myhill      True
-            myant       True
+            myant       int (id), oldloc
+
+            mydead      [int] (ids of dead ants)
 
         -- return value must be as follows:
         
@@ -110,21 +112,23 @@ class Bot(object):
         self.decider = decider
         self.logfn = logfn
         # message handlers
-        self.handlers = collections.defaultdict(lambda: lambda *args: None)
+        self.handlers = collections_defaultdict(lambda: lambda *args: None)
         for msg in ['player_seed','loadtime','turntime','turns','rows','cols']:
             self.handlers[msg] = self.handle_number
         for msg in ['attackradius2','spawnradius2','viewradius2']:
             self.handlers[msg] = self.handle_radius
         self.handlers['ready'] = lambda *args: self.pregame() or ['go']
-        self.handlers['turn'] = lambda *args: self.presense()
+        self.handlers['turn'] = lambda msg, num: self.presense(msg, num)
         self.handlers['go'] = lambda *args: self.postsense() + ['go']
         self.handlers['w'] = lambda msg, r, c   : self.sense_water((r, c))
         self.handlers['f'] = lambda msg, r, c   : self.sense_food ((r, c))
         self.handlers['h'] = lambda msg, r, c, o: self.sense_hill((r, c), o)
         self.handlers['a'] = lambda msg, r, c, o: self.sense_ant ((r, c), o)
-        self.handlers['d'] = lambda msg, r, c, o: None
+        self.handlers['d'] = lambda msg, r, c, o: self.sense_dead((r, c), o)
         # game details
         self.game = {}
+        self.turn = None
+        self.timer = None
         # sensory maps { ... (row, col): or<bool,int>, ... }
         self.dirt      = {}
         self.food      = {}
@@ -132,6 +136,10 @@ class Bot(object):
         self.enemyant  = {}
         self.myhill    = {}
         self.myant     = {}
+        self.mydead    = 0
+        # ant state
+        self.antcount = 1
+        self.antplans  = {}
 
     def handle(self, s):
         args = s.split()
@@ -143,14 +151,14 @@ class Bot(object):
 
     def handle_radius(self, msg, val):
         self.game[msg] = int(val)
-        self.game[msg[:-1]] = int(math.sqrt(int(val)))
+        self.game[msg[:-1]] = int(math_sqrt(int(val)))
 
     def pregame(self):
-        random.seed(self.game['player_seed'])
+        random_seed(self.game['player_seed'])
         for row in xrange(self.game['rows']):
             for col in xrange(self.game['cols']):
                 self.dirt[row, col] = True
-        self.decider.start()
+        self.decider.start(self.game)
 
     def sense_water(self, loc):
         del self.dirt[loc]
@@ -166,99 +174,131 @@ class Bot(object):
 
     def sense_ant(self, loc, owner):
         if owner == 0:
-            self.myant[loc] = True
+            if loc in self.antplans:
+                # recognize it as the one which planned to move to loc
+                # and got there successfully
+                aO, aI, aD, aV = self.antplans[loc]
+                del self.antplans[loc]
+                self.myant[loc] = (aI, aO)
+##                self.logfn('Ant #{} at {} -{}-> {}'.format(
+##                    aI, aO, aD, loc)) if self.logfn else None
+            else:
+                # no ant planned to move to loc...
+                r, c = loc
+                failed = [(n, self.antplans[n]) \
+                          for n in [(r-1,c), (r+1,c), (r,c-1), (r,c+1)] \
+                          if n in self.antplans \
+                          and self.antplans[n][0] == loc]
+                # failed is a list of ants who were at loc, and planned to be
+                # somewhere adjacent to it
+                for aN, (aO, aI, aD, aV) in failed:
+                    # recognize it as the one which planned to move to loc
+                    # but was blocked by the game system
+                    assert len(failed) == 1 # because gale-shapley prevents
+                    assert aO == loc # because we found it there..
+                    del self.antplans[aN]
+                    self.myant[loc] = (aI, aO)
+##                    self.logfn('Ant #{} at {} -FAIL{}-> {}'.format(
+##                        aI, aO, aD, aN)) if self.logfn else None
+                    break
+                else:
+                    # recognize it as a new ant (it should be on a hill, but we
+                    # won't know that until post-sense is called)
+                    self.myant[loc] = aI = (self.antcount, loc)
+                    self.antcount += 1
+##                    self.logfn('Ant #{} born at {}'.format(
+##                        aI, loc)) if self.logfn else None
         else:
             self.enemyant[loc] = owner
 
-    def presense(self):
+    def sense_dead(self, loc, owner):
+        if owner == 0:
+##            self.logfn('Ant died at {}'.format(loc)) if self.logfn else None
+            self.mydead += 1
+
+    def presense(self, msg, num):
+        self.timer = DateTime.now()
+        self.turn = num
+        if self.logfn:
+            self.logfn('TURN ' + str(num))
         self.food.clear()
         self.enemyhill.clear()
         self.enemyant.clear()
         self.myhill.clear()
         self.myant.clear()
+        self.mydead = 0
 
     def postsense(self):
-        if self.logfn is not None:
-            self.logfn(self.draw_map())
-        # decide where ants should go
-        thoughts = self.decider.think(self.dirt.copy(), self.food,
-                                      self.enemyhill, self.enemyant,
-                                      self.myhill, self.myant)
-        # apply next-turn decisions
-        final = reconcile(thoughts)
+        self.logfn('DECIDER TURN '+str(self.turn)) if self.logfn else None
+        assert self.mydead == len(self.antplans)
+        #
+        # query where ants should go
+        decidertime = DateTime.now()
+        moves = self.decider.think(
+            self.dirt.copy(),
+            self.food,
+            self.enemyhill,
+            self.enemyant,
+            self.myhill,
+            self.myant.copy(),
+            [aI for aO, aI, aD, aV in self.antplans.itervalues()]
+        )
+        decidertime = (DateTime.now() - decidertime).total_seconds()
+        #
+        # filter orders for ants that don't exist
+        # also append 'stay' to the end of every order vector
+        moves = {loc:vectors + ['='] \
+                 for loc, vectors in moves.iteritems() \
+                 if loc in self.myant}
+        #
+        # add 'stay' orders for the left-out ants
+        # also copy ant ids from myant to moves
+        for loc, (antid, oldloc) in self.myant.iteritems():
+            if loc not in moves:
+                moves[loc] = ['=']
+            moves[loc] = (antid, moves[loc])
+        #
+        # define a function to get the next valid vector in a list
+        # pop is okay b/c vector lists end with '=' (which locations prefer)
+        def poporder(oldloc, vectors):
+            vector = vectors.pop(0)
+            newloc = DISPLACE[vector](oldloc)
+            return (newloc, vector) \
+                   if newloc in self.dirt and newloc not in self.food \
+                   else poporder(oldloc, vectors)
+        #
+        # gale-shapley stable matching algorithm
+        # - single men "moves" oldloc:(identity,[vector])
+        # - single women "antplans" any key which isn't set
+        # - couples "antplans" newloc:(oldloc,identity,vector,[vector])
+        self.antplans.clear()
+        while moves:
+            for aO, (aI, aV) in moves.items():              # each ant "a"
+                aN, aD = poporder(aO, aV)                   # proposes to a location
+                if aN in self.antplans:                     # if the location is claimed
+                    if aD == '=':                           #   but prefers "a"
+                        bO, bI, bD, bV = self.antplans[aN]  #     get the claimant "b"
+                        moves[bO] = bI, bV                  #     remove the claim of "b"
+                        self.antplans[aN] = (aO, aI, aD, aV)#     set a claim for "a"
+                        del moves[aO]                       #     "a" is no longer single
+                else:                                       # if the location is free
+                    self.antplans[aN] = (aO, aI, aD, aV)    #   set a claim for "a"
+                    del moves[aO]                           #   "a" is no longer single
+        #
+        # log elapsed time
+        if self.logfn:
+            maxtime = self.game['turntime']
+            decidertime *= 1000.0
+            totaltime = (DateTime.now() - self.timer).total_seconds() * 1000.0
+            assert totaltime > decidertime
+            self.logfn(
+                'Ants: {} Time: {:f}ms of {:.2f}ms; {:f}ms decider, {:f}ms protocol'.format(
+                len(self.antplans), totaltime, maxtime, decidertime, totaltime - decidertime))
+        #
         # issue orders to ants who are to move
-        return [' '.join(['o', oldloc[0], oldloc[1], vector]) \
-                for newloc, (oldloc, vector) in final.iteritems() \
-                if newloc != oldloc]
-
-##    def draw_map(self, vis=None):
-##        # determine what is currently visible
-##        visible = {}
-##        for antloc in self.mynow:
-##            for loc in Bot.allinradius(self.game['viewradius'], self.game['viewradius2'], *antloc):
-##                visible[loc] = True
-##        m = {} if vis is None else {loc:Thing(SEEE) for loc in vis}
-##        m.update(self.static)
-##        m.update(self.immobile)
-##        m.update(self.theirs)
-##        m.update(self.mynow)
-##        s = []
-##        for r in xrange(self.game['rows']):
-##            s.append([])
-##            for c in xrange(self.game['cols']):
-##                try:
-##                    thing = m[r, c]
-##                except KeyError:
-##                    s[-1].append('-')
-##                else:
-##                    s[-1].append(MAPCHARS[thing.type](thing.owner))
-##            s[-1] = ''.join(s[-1])
-##        return '\n'.join(s)
+        return ['o {} {} {}'.format(row, col, vector) \
+                for newloc, ((row, col), identity, vector, vectors) \
+                in self.antplans.iteritems() \
+                if vector != '=']
 
 ###############################################################################
-
-# a vector is one of:
-# -- 'N' indicating north
-# -- 'S' indicating south
-# -- 'E' indicating east
-# -- 'W' indicating west
-# -- '=' indicating no movement
-
-# a location is a tuple<number,number>
-# -- first number represents row
-# -- second number represents column
-
-def reconcile(m):
-    '''{location: [vector]}
-    --> {location: (location, vector)}'''
-    def f0(m, f):
-        '''[(location, [vector])] {location: (location, vector)}
-        --> {location:tuple<location,vector>}'''
-##        def f1(m):
-##            pass
-##        return f1()
-    return f0(m.items(), {})
-##        final = {}
-##        for loc, vectors in thoughts.iteritems():
-##            def resolve(final, loc, vectors):
-##                
-##            while vectors:
-##                v = vectors.pop()
-##                nl = DISPLACE[](loc)
-##        # { ... newloc : (ant, oldloc, vector), ... }
-##        self.mynext.clear()
-##        for oldloc, vects in dirs.iteritems():
-##            # consume vects until ant has a next location
-##            # if blocked by water, 
-##            newloc = DISPLACE[vect](oldloc)
-##            # if blocked by water or another ant's move, stay put
-##            if newloc in self.mynext or newloc in self.static:
-##                self.mynext[oldloc] = ant, oldloc, '!' + vect
-##            else:
-##                self.mynext[newloc] = ant, oldloc, vect
-
-###############################################################################
-
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()

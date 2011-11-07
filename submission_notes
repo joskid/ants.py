@@ -1,3 +1,4 @@
 Submission Notes
+3. Naive pathfinding. Simple goal assignment and elimination. Gale-Shapley to prevent ants stepping on eachother.
 2. Brownian motion.
 1. Forgot to remove logging code. Too excited!

@@ -4,6 +4,7 @@ import datetime
 # local
 import protocol
 from brownian import Decider as Brownian
+from navigator import Decider as Navigator
 
 
 def genlogger(fn):
@@ -24,23 +25,45 @@ def tell(s):
     sys.stdout.flush()
 
 
+DEFAULTDEC = 'Navigator'
+DECIDERS = {
+    'Brownian': Brownian,
+    DEFAULTDEC: Navigator,
+}
+
+
 if __name__ == '__main__':
+    DECOPT = '--decider'
+    LOGOPT = '--log'
+    #
+    # decider option
+    if DECOPT in sys.argv:
+        i = sys.argv.index(DECOPT)
+        sys.argv.pop(i)
+        try:
+            decname = sys.argv.pop(i)
+        except IndexError:
+            raise ValueError('{} option requires an argument'.format(DECOPT))
+    else:
+        decname = DEFAULTDEC
+    try:
+        decclass = DECIDERS[decname]
+    except KeyError:
+        raise ValueError('{} invalid argument "{}"'.format(DECOPT, decname))
+    #
+    # logger option
+    if LOGOPT in sys.argv:
+        sys.argv.remove(LOGOPT)
+        logger = genlogger('log.'+decname)
+    else:
+        logger = None
     #
     # initialize bot
-    if len(sys.argv) > 1:
-        logger = genlogger(sys.argv[1])
-        brain = Brownian(logger)
-        bot = protocol.Bot(brain, logger)
-    else:
-        logger = lambda s: None
-        brain = Brownian()
-        bot = protocol.Bot(brain)
+    bot = protocol.Bot(decclass(logger), logger)
     #
     # main loop
     while True:
         heard = listen()
-        #logger('IN ' + heard)
         replies = bot.handle(heard)
         if replies:
             tell('\n'.join(replies))
-            #logger('OUT ' + str(replies))

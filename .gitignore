@@ -4,3 +4,5 @@ tools
 *.sh
 *.zip
 *.log
+diffusion10000
+log.*

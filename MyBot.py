@@ -5,6 +5,7 @@ import datetime
 import protocol
 from brownian import Decider as Brownian
 from navigator import Decider as Navigator
+from kmeans import Decider as KMeans
 
 
 def genlogger(fn):
@@ -25,10 +26,11 @@ def tell(s):
     sys.stdout.flush()
 
 
-DEFAULTDEC = 'Navigator'
+DEFAULTDEC = 'KMeans'
 DECIDERS = {
     'Brownian': Brownian,
-    DEFAULTDEC: Navigator,
+    'Navigator': Navigator,
+    DEFAULTDEC: KMeans,
 }
 
 

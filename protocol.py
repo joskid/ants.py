@@ -13,9 +13,6 @@ from collections import defaultdict as collections_defaultdict
 #   D=vector(direction)
 
 
-###############################################################################
-
-
 DISPLACE = {
     'N': lambda loc: (loc[0] - 1, loc[1]    ),
     'E': lambda loc: (loc[0]    , loc[1] + 1),
@@ -23,29 +20,6 @@ DISPLACE = {
     'W': lambda loc: (loc[0]    , loc[1] - 1),
     '=': lambda loc: loc,
 }
-
-
-###############################################################################
-
-
-def inradius(a, radius2, b):
-    '''Is loc 'a' within the squared-radius of loc 'b'?'''
-    return (a[0] - b[0]) ** 2 + \
-           (a[1] - b[1]) ** 2 <= radius2
-
-
-def allinradius(radius, radius2, loc):
-    '''Yield all values within the radius of the location.
-
-    radius  -- integer radius
-    radius2 -- integer squared-radius
-
-    '''
-    for r in xrange(-radius, radius + 1):
-        for c in xrange(-radius, radius + 1):
-            locb = loc[0] + r, loc[1] + c
-            if inradius(loc, radius2, locb):
-                yield locb
 
 
 ###############################################################################
@@ -62,7 +36,7 @@ class Bot(object):
             def start(game):
                 pass
 
-            def think(dirt, food, enemyhill, enemyant, myhill, myant):
+            def think(water, food, enemyhill, enemyant, myhill, myant):
                 pass
 
         start
@@ -93,7 +67,7 @@ class Bot(object):
             Most arguments are dictionaries mapping (row, col) locations to
             either boolean or integer values.
 
-            dirt        True
+            water       True
             food        True
             enemyhill   int (owner)
             enemyant    int (owner)
@@ -103,7 +77,7 @@ class Bot(object):
             mydead      [int] (ids of dead ants)
 
         -- return value must be as follows:
-        
+
             A dictionary having the same set of keys as myant, each of which
             maps to a list of prioritized vectors including 'N', 'E', 'S', 'W',
             and '=' (indicating no movement).
@@ -130,7 +104,7 @@ class Bot(object):
         self.turn = None
         self.timer = None
         # sensory maps { ... (row, col): or<bool,int>, ... }
-        self.dirt      = {}
+        self.water     = {}
         self.food      = {}
         self.enemyhill = {}
         self.enemyant  = {}
@@ -155,13 +129,10 @@ class Bot(object):
 
     def pregame(self):
         random_seed(self.game['player_seed'])
-        for row in xrange(self.game['rows']):
-            for col in xrange(self.game['cols']):
-                self.dirt[row, col] = True
         self.decider.start(self.game)
 
     def sense_water(self, loc):
-        del self.dirt[loc]
+        self.water[loc] = True
 
     def sense_food(self, loc):
         self.food[loc] = True
@@ -180,8 +151,8 @@ class Bot(object):
                 aO, aI, aD, aV = self.antplans[loc]
                 del self.antplans[loc]
                 self.myant[loc] = (aI, aO)
-##                self.logfn('Ant #{} at {} -{}-> {}'.format(
-##                    aI, aO, aD, loc)) if self.logfn else None
+#                 self.logfn('Ant #{} at {} -{}-> {}'.format(
+#                     aI, aO, aD, loc)) if self.logfn else None
             else:
                 # no ant planned to move to loc...
                 r, c = loc
@@ -198,22 +169,21 @@ class Bot(object):
                     assert aO == loc # because we found it there..
                     del self.antplans[aN]
                     self.myant[loc] = (aI, aO)
-##                    self.logfn('Ant #{} at {} -FAIL{}-> {}'.format(
-##                        aI, aO, aD, aN)) if self.logfn else None
+#                     self.logfn('Ant #{} at {} -FAIL{}-> {}'.format(
+#                         aI, aO, aD, aN)) if self.logfn else None
                     break
                 else:
-                    # recognize it as a new ant (it should be on a hill, but we
-                    # won't know that until post-sense is called)
-                    self.myant[loc] = aI = (self.antcount, loc)
+                    # recognize it as a new ant (hope it's on a hill!)
+                    self.myant[loc] = aI, loc = (self.antcount, loc)
                     self.antcount += 1
-##                    self.logfn('Ant #{} born at {}'.format(
-##                        aI, loc)) if self.logfn else None
+#                     self.logfn('Ant #{} born at {}'.format(
+#                         aI, loc)) if self.logfn else None
         else:
             self.enemyant[loc] = owner
 
     def sense_dead(self, loc, owner):
         if owner == 0:
-##            self.logfn('Ant died at {}'.format(loc)) if self.logfn else None
+#             self.logfn('Ant died at {}'.format(loc)) if self.logfn else None
             self.mydead += 1
 
     def presense(self, msg, num):
@@ -228,6 +198,10 @@ class Bot(object):
         self.myant.clear()
         self.mydead = 0
 
+    def wrap(self, loc):
+        '''Finds the true on-map coordinates of an unwrapped location.'''
+        return loc[0] % self.game['rows'], loc[1] % self.game['cols']
+
     def postsense(self):
         self.logfn('DECIDER TURN '+str(self.turn)) if self.logfn else None
         assert self.mydead == len(self.antplans)
@@ -235,7 +209,7 @@ class Bot(object):
         # query where ants should go
         decidertime = DateTime.now()
         moves = self.decider.think(
-            self.dirt.copy(),
+            self.water.copy(),
             self.food,
             self.enemyhill,
             self.enemyant,
@@ -262,9 +236,9 @@ class Bot(object):
         # pop is okay b/c vector lists end with '=' (which locations prefer)
         def poporder(oldloc, vectors):
             vector = vectors.pop(0)
-            newloc = DISPLACE[vector](oldloc)
+            newloc = self.wrap(DISPLACE[vector](oldloc))
             return (newloc, vector) \
-                   if newloc in self.dirt and newloc not in self.food \
+                   if newloc not in self.water and newloc not in self.food \
                    else poporder(oldloc, vectors)
         #
         # gale-shapley stable matching algorithm
@@ -290,7 +264,6 @@ class Bot(object):
             maxtime = self.game['turntime']
             decidertime *= 1000.0
             totaltime = (DateTime.now() - self.timer).total_seconds() * 1000.0
-            assert totaltime > decidertime
             self.logfn(
                 'Ants: {} Time: {:f}ms of {:.2f}ms; {:f}ms decider, {:f}ms protocol'.format(
                 len(self.antplans), totaltime, maxtime, decidertime, totaltime - decidertime))

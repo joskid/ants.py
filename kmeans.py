@@ -33,7 +33,7 @@ class Decider(object):
         active = {}
         active.update({loc:0**2 for loc in enemyhill})
         active.update({loc:self.g['attackradius2'] + 1 for loc in enemyant})
-        self.logfn('\nactive goals: {}'.format(active))
+        self.logfn('\nactive goals: {}'.format(active)) if self.logfn else None
         passive = {}
         passive.update({loc:1**2 for loc in food})
         # age passive goals; keep old and visible ones; track new ones
@@ -48,22 +48,25 @@ class Decider(object):
         # if there are some passive goals, add the hill too
         if len(passive) > 2:
             passive.update({loc:self.g['viewradius2'] for loc in myhill})
-        self.logfn('\npassive goals: {}\nages: {}'.format(passive, self.age))
+        self.logfn('\npassive goals: {}\nages: {}'.format(passive, self.age)
+                   ) if self.logfn else None
         # combine goal lists, giving active goals priority
         passive.update(active)
         goals = passive
         self.logfn('goal time: {}ms'.format(
-            (DateTime.now() - goaltime).total_seconds() * 1000.0))
+            (DateTime.now() - goaltime).total_seconds() * 1000.0)
+            ) if self.logfn else None
         if goals:
             # divide ants by location into len(goals) groups
             if len(goals) > 1:
                 clustime = DateTime.now()
-                squads = self.cluster(2, goals.keys(), myant.keys())
+                squads = self.cluster(1, goals.keys(), myant.keys())
                 self.logfn('cluster time: {}ms'.format(
-                    (DateTime.now() - clustime).total_seconds() * 1000.0))
+                    (DateTime.now() - clustime).total_seconds() * 1000.0)
+                    ) if self.logfn else None
             else:
                 # one 'cluster'
-                self.logfn('onecluster')
+                self.logfn('onecluster') if self.logfn else None
                 rows, cols = zip(*myant.keys())
                 r = float(sum(rows)) / len(myant)
                 c = float(sum(cols)) / len(myant)
@@ -85,7 +88,7 @@ class Decider(object):
                         random.shuffle(self.v)
                         myant[aN] = self.v[:]
         else:
-            self.logfn('brownian')
+            self.logfn('brownian') if self.logfn else None
             # move each ant individually randomly
             for aN, (aI, aO) in myant.iteritems():
                 random.shuffle(self.v)
@@ -102,7 +105,7 @@ class Decider(object):
         squads = means
         for i in xrange(iterations):
             squads = {sM:[] for sM in squads}
-            self.logfn('squads: {}'.format(squads))
+            self.logfn('squads: {}'.format(squads)) if self.logfn else None
             # assign each ant to a squad
             for aN in ants:
                 (dist, loc), sA = min([(self.unwrapped_dir(aN, sM), sA) \

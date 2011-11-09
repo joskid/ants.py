@@ -5,6 +5,17 @@ from datetime import datetime as DateTime
 import antmath
 
 
+'''
+Squad-based goal seeking decider for the 2011 Google AI Challenge.
+Not yet submitted.
+
+Finds goals and assigns ants to squads each turn. Moves squads toward their
+goal each turn. Eliminates goals which have been visible for too long.
+
+(3)
+'''
+
+
 class Decider(object):
 
     def __init__(self, logfn=None):

@@ -4,6 +4,16 @@ import random
 import protocol
 
 
+'''
+Baseline decider for the 2011 Google AI Challenge.
+Maximum Rank was around 1400th of 5000 contestants.
+
+Moves each ant randomly each turn.
+
+(1)
+'''
+
+
 class Decider(object):
 
     def __init__(self, logfn=None):

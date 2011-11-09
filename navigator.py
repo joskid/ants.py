@@ -1,8 +1,18 @@
 # stdlib
 import random
-import heapq
 # local
 import protocol
+
+
+'''
+Goal seeking decider for the 2011 Google AI Challenge.
+Maximum Rank was around 1560th of 5400 contestants.
+
+Assigns wayward ants to goals each turn. Moves goal oriented ants toward their
+goal each turn. Eliminates goals which ants do not make progress toward.
+
+(2)
+'''
 
 
 class Decider(object):

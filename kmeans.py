@@ -28,82 +28,122 @@ class Decider(object):
         # goal ages
         # age = { ... loc:age ... }
         self.age = {}
-        self.maxage = 0
 
     def start(self, game):
         '''Set up the decider according to the game specifications.'''
         self.g.update(game)
-        self.maxage = 1.5 * self.g['viewradius']
+        self.MAXAGE = 2.0 * game['viewradius']
+        self.PERIMETER = 4 * game['viewradius2']
+        self.PERIMETER2 = self.PERIMETER ** 2
+        self.ENEMYHILL = (0**2,
+                          0**2)
+        self.ENEMYANT = ((game['attackradius'] + 3) ** 2,
+                         (game['viewradius']) ** 2)
+        self.ENEMYANTBATTLE = ((game['attackradius'] + 1) ** 2,
+                               (game['attackradius'] + 6) ** 2)
+        self.FOOD = (1**2,
+                     1**2)
+        self.MYHILL = (2 ** 2,
+                       6 ** 2)
 
     def think(self, dirt, food, enemyhill, enemyant, myhill, myant, mydead):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
+
+
         #if self.logfn:
         #    self.logfn('\n' + self._make_map(
         #        dirt, food, enemyhill, enemyant, myhill, myant, mydead))
+
+
+        # build a list of goals
         goaltime = DateTime.now()
+        # active goals
         active = {}
-        active.update({loc:0**2 for loc in enemyhill})
-        active.update({loc:self.g['attackradius2'] + 1 for loc in enemyant})
+        active.update({loc:self.ENEMYHILL for loc in enemyhill})
+        if len(myant) > 1.35 * len(enemyant):
+            active.update({loc:self.ENEMYANTBATTLE for loc in enemyant})
+        else:
+            active.update({loc:self.ENEMYANT for loc in enemyant})
+        # log about active goals
         self.logfn('\nactive goals: {}'.format(active)) if self.logfn else None
+        # passive goals
         passive = {}
-        passive.update({loc:1**2 for loc in food})
-        # age passive goals; keep old and visible ones; track new ones
-        self.age = {loc:age + 1 for loc, age in self.age.iteritems() \
-                    if age > self.maxage or loc in passive}
-        new = {loc:0 for loc in passive}
-        new.update(self.age)
-        self.age = new
+        if len(myant) < 125:
+            passive.update({loc:self.FOOD for loc in food})
+            # increase age of passive goals; keep ages of old and visible ones
+            self.age = {loc:age + 1 for loc, age in self.age.iteritems() \
+                        if age > self.MAXAGE or loc in passive}
+            # track age new passive goals
+            new = {loc:0 for loc in passive}
+            new.update(self.age)
+            self.age = new
         # filter passive goals which are old
         passive = {loc:rad for loc, rad in passive.iteritems() \
-                   if loc in self.age and self.age[loc] <= self.maxage}
-        # if there are some passive goals, add the hill too
-        if len(passive) > 2:
-            passive.update({loc:self.g['viewradius2'] for loc in myhill})
+                   if loc in self.age and self.age[loc] <= self.MAXAGE}
+        # if there are enemies near a hill, protect the hill
+        nearhill = [antmath.allinradius(self.PERIMETER, self.PERIMETER2, loc) \
+                    for loc in myhill]
+        if set(enemyant).intersection(nearhill):
+            passive.update({loc:self.MYHILL for loc in myhill})
+        # log about passive goals
         self.logfn('\npassive goals: {}\nages: {}'.format(passive, self.age)
                    ) if self.logfn else None
         # combine goal lists, giving active goals priority
         passive.update(active)
         goals = passive
+        # log about goal descision time
         self.logfn('goal time: {}ms'.format(
             (DateTime.now() - goaltime).total_seconds() * 1000.0)
             ) if self.logfn else None
+
+
+        # assign moves to ants
         if goals:
-            # divide ants by location into len(goals) groups
+
             if len(goals) > 1:
+                # divide ants by location into len(goals) groups
                 clustime = DateTime.now()
                 squads = self.cluster(1, goals.keys(), myant.keys())
-                self.logfn('cluster time: {}ms'.format(
+                assert sum(map(len, squads.values())) == len(myant)
+                self.logfn('cluster: {}ms'.format(
                     (DateTime.now() - clustime).total_seconds() * 1000.0)
                     ) if self.logfn else None
             else:
-                # one 'cluster'
-                self.logfn('onecluster') if self.logfn else None
+                # all ants are in one supercluster
+                self.logfn('supercluster') if self.logfn else None
                 rows, cols = zip(*myant.keys())
                 r = float(sum(rows)) / len(myant)
                 c = float(sum(cols)) / len(myant)
                 squads = {(r, c): myant.keys()}
+
             # assign each squad the closest goal
             for sM, sA in squads.iteritems():
                 dist, gloc = min([self.unwrapped_dir(sM, loc) for loc in goals])
-                grad = goals[self.wrap(gloc)]
+                gradmin, gradmax = goals[self.wrap(gloc)]
                 for aN in sA:
                     # make ants keep the right distance from goals
                     vect = antmath.naive_dir(aN, gloc)
-                    #random.shuffle(vect)
                     dist = antmath.distance2(aN, gloc)
-                    if dist > grad:
+                    if dist > gradmax and dist < 7 * self.g['viewradius2']:
                         myant[aN] = vect
-                    elif dist < grad:
+                        random.shuffle(myant[aN]) if gradmax != gradmin else None
+                        myant[aN] += [antmath.reverse_dir(v) for v in vect]
+                    elif dist < gradmin:
                         myant[aN] = [antmath.reverse_dir(v) for v in vect]
+                        random.shuffle(myant[aN]) if gradmax != gradmin else None
+                        myant[aN] += vect
                     else:
-                        random.shuffle(self.v)
                         myant[aN] = self.v[:]
+                        random.shuffle(myant[aN])
+
         else:
-            self.logfn('brownian') if self.logfn else None
+
             # move each ant individually randomly
+            self.logfn('brownian') if self.logfn else None
             for aN, (aI, aO) in myant.iteritems():
                 random.shuffle(self.v)
                 myant[aN] = self.v[:]
+
         return myant
 
     def cluster(self, iterations, means, ants):
@@ -126,10 +166,12 @@ class Decider(object):
             for sM, sA in squads.items():
                 if sA:
                     del squads[sM]
-                    rows, cols = zip(*sA)
-                    r = float(sum(rows)) / len(sA)
-                    c = float(sum(cols)) / len(sA)
-                    squads[r, c] = sA
+                    sumr = sumc = 0
+                    for aN in sA:
+                        sumr += aN[0]
+                        sumc += aN[1]
+                    avg = float(sumr) / len(sA), float(sumc) / len(sA)
+                    squads[avg] = squads[avg] + sA if avg in squads else sA
         return squads
 
     def unwrapped_dir(self, origin, target):

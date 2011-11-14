@@ -6,3 +6,4 @@ tools
 *.log
 diffusion10000
 log.*
+skill_graph

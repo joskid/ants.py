@@ -6,6 +6,7 @@ import protocol
 from brownian import Decider as Brownian
 from navigator import Decider as Navigator
 from kmeans import Decider as KMeans
+from borg import Decider as Borg
 
 
 def genlogger(fn):
@@ -26,11 +27,12 @@ def tell(s):
     sys.stdout.flush()
 
 
-DEFAULTDEC = 'KMeans'
+DEFAULTDEC = 'Borg'
 DECIDERS = {
     'Brownian': Brownian,
     'Navigator': Navigator,
-    DEFAULTDEC: KMeans,
+    'KMeans': KMeans,
+    DEFAULTDEC: Borg,
 }
 
 

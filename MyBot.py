@@ -3,10 +3,7 @@ import sys
 import datetime
 # local
 import protocol
-from brownian import Decider as Brownian
-from navigator import Decider as Navigator
-from kmeans import Decider as KMeans
-from borg import Decider as Borg
+import decider
 
 
 def genlogger(fn):
@@ -27,15 +24,6 @@ def tell(s):
     sys.stdout.flush()
 
 
-DEFAULTDEC = 'Borg'
-DECIDERS = {
-    'Brownian': Brownian,
-    'Navigator': Navigator,
-    'KMeans': KMeans,
-    DEFAULTDEC: Borg,
-}
-
-
 if __name__ == '__main__':
     DECOPT = '--decider'
     LOGOPT = '--log'
@@ -48,17 +36,17 @@ if __name__ == '__main__':
             decname = sys.argv.pop(i)
         except IndexError:
             raise ValueError('{} option requires an argument'.format(DECOPT))
+        try:
+            decclass = decider.DECIDERS[decname]
+        except KeyError:
+            raise ValueError('{} invalid argument "{}"'.format(DECOPT, decname))
     else:
-        decname = DEFAULTDEC
-    try:
-        decclass = DECIDERS[decname]
-    except KeyError:
-        raise ValueError('{} invalid argument "{}"'.format(DECOPT, decname))
+        decname, decclass = decider.DEFAULT
     #
     # logger option
     if LOGOPT in sys.argv:
         sys.argv.remove(LOGOPT)
-        logger = genlogger('log.'+decname)
+        logger = genlogger('log-'+decname+'.log')
     else:
         logger = None
     #

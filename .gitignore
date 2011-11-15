@@ -1,9 +1,8 @@
 game_logs
 tools
+other
 *.pyc
 *.sh
 *.zip
 *.log
-diffusion10000
 log.*
-skill_graph

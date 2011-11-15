@@ -22,17 +22,30 @@ class Decider(object):
         self.g = {}
         self.l = logfn
         self.v = list('NESW')
-        # s maps squad id to (node, navigation point)
-        # { ... num:(loc, loc, [vector]) ...}
+        # s maps squad id to (node, center, exploration index)
+        # { ... num:(loc, loc, ) ...}
         self.s = {}
-        # m maps tree nodes to (parent node, exploration stack)
+        # m maps graph nodes to (, exploration stack)
         # { ... loc:(or<loc,None>, [vector]) ... }
         self.m = {}
+        # h maps ant id to hill id
 
     def start(self, game):
         self.g.update(game)
 
     def think(self, dirt, food, enemyhill, enemyant, myhill, myant, mydead):
+        myant = (
+            (aN, aI, aO, min((self.unwrapped_dir(aN, loc) for loc in myhill))) \
+            for aN, (aI, aO) in myant.iteritems()
+        )
+        return self.assignmoves
+
+
+        d2, node = 
+
+
+
+
         moves = {}
         reg = {}
 
@@ -68,6 +81,9 @@ class Decider(object):
             moves.update(self.movesquad(sC, sA, vnxt sN))
 
         return moves
+
+    def nearest(self, origin, targets):
+        return min([self.unwrapped_dir(origin, t) for t in targets])[1]
 
     def unwrapped_dir(self, origin, target):
         '''Find the shortest path to the target.

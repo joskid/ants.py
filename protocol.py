@@ -108,11 +108,12 @@ class Bot(object):
         self.food      = {}
         self.enemyhill = {}
         self.enemyant  = {}
+        self.myhill0   = {}
         self.myhill    = {}
         self.myant     = {}
         self.mydead    = 0
         # ant state
-        self.antcount = 1
+        self.anttotal = 0
         self.antplans  = {}
 
     def handle(self, s):
@@ -140,57 +141,54 @@ class Bot(object):
     def sense_hill(self, loc, owner):
         if owner == 0:
             self.myhill[loc] = True
+            if self.turn == 1:
+                self.myhill0[loc] = False
         else:
             self.enemyhill[loc] = owner
 
     def sense_ant(self, loc, owner):
         if owner == 0:
+            # did some ant plan to be at loc?
             if loc in self.antplans:
-                # recognize it as the one which planned to move to loc
-                # and got there successfully
+                # recognize it as that ant
                 aO, aI, aD, aV = self.antplans[loc]
                 del self.antplans[loc]
                 self.myant[loc] = (aI, aO)
-#                 self.logfn('Ant #{} at {} -{}-> {}'.format(
-#                     aI, aO, aD, loc)) if self.logfn else None
-            else:
-                # no ant planned to move to loc...
-                r, c = loc
-                failed = [(n, self.antplans[n]) \
-                          for n in [(r-1,c), (r+1,c), (r,c-1), (r,c+1)] \
-                          if n in self.antplans \
-                          and self.antplans[n][0] == loc]
-                # failed is a list of ants who were at loc, and planned to be
-                # somewhere adjacent to it
-                for aN, (aO, aI, aD, aV) in failed:
-                    # recognize it as the one which planned to move to loc
-                    # but was blocked by the game system
-                    assert len(failed) == 1 # because gale-shapley prevents
-                    assert aO == loc # because we found it there..
-                    del self.antplans[aN]
-                    self.myant[loc] = (aI, aO)
-#                     self.logfn('Ant #{} at {} -FAIL{}-> {}'.format(
-#                         aI, aO, aD, aN)) if self.logfn else None
-                    break
-                else:
-                    # recognize it as a new ant (hope it's on a hill!)
-                    self.myant[loc] = aI, loc = (self.antcount, loc)
-                    self.antcount += 1
-#                     self.logfn('Ant #{} born at {}'.format(
-#                         aI, loc)) if self.logfn else None
+                self.logfn and self.logfn('Ant #{} at {} -{}-> {}'.format(aI, aO, aD, loc))
+                return
+            # no ant planned to be at loc...
+            r, c = loc
+            fail = [(f, self.antplans[f]) \
+                    for f in [(r-1,c), (r+1,c), (r,c-1), (r,c+1)] \
+                    if f in self.antplans and self.antplans[f][0] == loc]
+            # did some ant fail to follow its plan?
+            if fail:
+                # fail is one ant which was at loc but planned to be adjacent to it
+                assert len(fail) == 1
+                # recognize it as the one which planned to move but failed
+                aN, (aO, aI, aD, aV) = fail[0]
+                del self.antplans[aN]
+                self.myant[loc] = (aI, aO)
+                self.logfn and self.logfn('Ant #{} at {} -FAIL{}-> {}'.format(aI, aO, aD, aN))
+                return
+            # no ant was there before...
+            # recognize it as a new ant (let's hope on a hill!)
+            self.myant[loc] = aI, loc = (self.anttotal, loc)
+            self.anttotal += 1
+            self.logfn and self.logfn('Ant #{} born at {}'.format(aI, loc))
         else:
+            # just somebody else's ant
             self.enemyant[loc] = owner
 
     def sense_dead(self, loc, owner):
         if owner == 0:
-#             self.logfn('Ant died at {}'.format(loc)) if self.logfn else None
+            self.logfn and self.logfn('Ant died at {}'.format(loc))
             self.mydead += 1
 
     def presense(self, msg, num):
         self.timer = DateTime.now()
         self.turn = num
-        if self.logfn:
-            self.logfn('TURN ' + str(num))
+        self.logfn and self.logfn('TURN #{} presense'.format(num))
         self.food.clear()
         self.enemyhill.clear()
         self.enemyant.clear()
@@ -198,13 +196,15 @@ class Bot(object):
         self.myant.clear()
         self.mydead = 0
 
-    def wrap(self, loc):
-        '''Finds the true on-map coordinates of an unwrapped location.'''
-        return loc[0] % self.game['rows'], loc[1] % self.game['cols']
-
     def postsense(self):
-        self.logfn('DECIDER TURN '+str(self.turn)) if self.logfn else None
+        self.logfn and self.logfn('TURN #{} postsense '.format(self.turn))
+        self.logfn and self.logfn('antplans: {}'.format(self.antplans))
         assert self.mydead == len(self.antplans)
+        #
+        # combine the original hill list with the current hill list
+        hills = {}
+        hills.update(self.myhill0) # adds false for all my hills
+        hills.update(self.myhill)  # adds true for my hills which are visible (and active)
         #
         # query where ants should go
         decidertime = DateTime.now()
@@ -213,20 +213,19 @@ class Bot(object):
             self.food,
             self.enemyhill,
             self.enemyant,
-            self.myhill,
+            hills,
             self.myant.copy(),
             [aI for aO, aI, aD, aV in self.antplans.itervalues()]
         )
         decidertime = (DateTime.now() - decidertime).total_seconds()
         #
-        # filter orders for ants that don't exist
-        # also append 'stay' to the end of every order vector
-        moves = {loc:vectors + ['='] \
-                 for loc, vectors in moves.iteritems() \
+        # filter moves to only ants that actually exist
+        # append 'stay' to the end of every move vector
+        moves = {loc:vectors + ['='] for loc, vectors in moves.iteritems() \
                  if loc in self.myant}
         #
-        # add 'stay' orders for the left-out ants
-        # also copy ant ids from myant to moves
+        # add a 'stay' order for each ant that was left-out
+        # copy ant ids from myant to moves
         for loc, (antid, oldloc) in self.myant.iteritems():
             if loc not in moves:
                 moves[loc] = ['=']
@@ -265,7 +264,7 @@ class Bot(object):
             decidertime *= 1000.0
             totaltime = (DateTime.now() - self.timer).total_seconds() * 1000.0
             self.logfn(
-                'Ants: {} Time: {:f}ms of {:.2f}ms; {:f}ms decider, {:f}ms protocol'.format(
+                'AntCt: {} Time: {:f}ms of {:.2f}ms; {:f}ms decider, {:f}ms protocol'.format(
                 len(self.antplans), totaltime, maxtime, decidertime, totaltime - decidertime))
         #
         # issue orders to ants who are to move
@@ -273,5 +272,9 @@ class Bot(object):
                 for newloc, ((row, col), identity, vector, vectors) \
                 in self.antplans.iteritems() \
                 if vector != '=']
+
+    def wrap(self, loc):
+        '''Finds the true on-map coordinates of an unwrapped location.'''
+        return loc[0] % self.game['rows'], loc[1] % self.game['cols']
 
 ###############################################################################

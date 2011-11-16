@@ -7,7 +7,7 @@ import antmath
 
 '''
 Squad-based goal seeking decider for the 2011 Google AI Challenge.
-Maximum Rank was around 1350th of 5400 contestants.
+Maximum Rank was around 1200th of 5400 contestants.
 
 Finds goals and assigns ants to squads each turn. Moves squads toward their
 goal each turn. Eliminates goals which have been visible for too long.

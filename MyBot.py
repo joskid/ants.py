@@ -8,6 +8,7 @@ import decider
 
 def genlogger(fn):
     LOG = open(fn, mode='wb')
+    sys.stderr = LOG
     def f(s):
         LOG.write('{} {}\n'.format(datetime.datetime.now(), s))
         LOG.flush()

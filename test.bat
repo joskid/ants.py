@@ -1,3 +1,0 @@
-@echo off
-python tools/playgame.py --turns=1500 "python MyBot.py --log" "python MyBot.py --log --decider KMeans" "python MyBot.py --log --decider Navigator" "python MyBot.py --log --decider Brownian" "python tools/sample_bots/python/HunterBot.py" --map_file="tools/maps/symmetric_random_walk/random_walk_07.map" --loadtime=3000 --turntime=500 --viewradius2=77 --attackradius2=5 --spawnradius2=1 --serial --food_rate=5 11 --food_turn=19 37 --food_start=75 175 --food_visible=3 5 --food=symmetric --attack=focus --kill_points=2 --cutoff_turn=150 --cutoff_percent=0.85 --log_dir="game_logs" -e --verbose
-pause

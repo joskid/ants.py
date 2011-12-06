@@ -1,5 +1,5 @@
 # local
-import hedge
+from hedge import Hedge
 #
 import clump
 import defend
@@ -20,38 +20,51 @@ algorithm.
 
 
 class Decider(object):
+    '''Decider object as required by protocol.py.'''
 
     def __init__(self, logfn=None):
         self.log = logfn
-        self.vect = list('NESW=')
-        self.game = None
-        # strategy stubs
-        self.strategies = [
-            clump.Decider,
-            defend.Decider,
-            explore.Decider,
-            march.Decider,
-            gather.Decider,
-        ]
-        # learner
-        self.hedge = hedge.Hedge(0.9, len(self.strategies))
-        self.faith = self.hedge.next()
-        self.loss = [0.0] * len(self.strategies)
+        self.__think = None
 
     def start(self, game):
         '''Set up the decider according to the game specifications.'''
-        self.game.update(game)
-        for s in self.strategies:
-            s.start(self.game)
+        self.__think = meta(self.log, game)
+        self.__think.next()
 
-    def think(self, dirt, food, enemyhill, enemyant, myhill, myant, mydead):
+    def think(self, *args):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
-        ### FINISH LAST TURN'S STUFF ###
-        # figure out whether each ant's action was good or bad
-        # generate a loss value for each ant relative to the number of ants
-        # -- do we need to weight losses according to last turn's weights? no...
-        # -- indicate loss for strategy(s) which were followed for this ant
-        ### START THIS TURN'S STUFF ###
+        return self.__think.send(args)
+
+
+def meta(logfn, game):
+    #
+    # experts (generators)
+    experts = [e(logfn, game) for e in (
+        clump.Genmoves,
+        march.Genmoves,
+        gather.Genmoves,
+        defend.Genmoves,
+        explore.Genmoves
+    )]
+    for e in experts:
+        e.next()
+    #
+    # learner (generator)
+    hedge = Hedge(0.9, len(STRATEGIES))
+    faith = hedge.next()
+    #
+    # initialize environment (blank)
+    water = {}
+    food = {}
+    enemyhill = {}
+    enemyant = {}
+    myhill = {}
+    myant = {}
+    mydead = []
+    #
+    # loop
+    while True:
+        # process/digest environment
         # query each strategy to impose a distribution over all ants
         #   s1 =
         #       a1 = { n:50%, e:50% }
@@ -67,4 +80,8 @@ class Decider(object):
         #   a2 = { e:95%, =:5% }
         # generate one random number per ant to decide where to go
         # store decisions and weights until next round
-        return myant
+        dirt, food, enemyhill, enemyant, myhill, myant, mydead = yield myant
+        # figure out whether each ant's action was good or bad
+        # generate a loss value for each ant relative to the number of ants
+        # -- do we need to weight losses according to last turn's weights? no...
+        # -- indicate loss for strategy(s) which were followed for this ant

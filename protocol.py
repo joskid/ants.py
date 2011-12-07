@@ -28,59 +28,46 @@ DISPLACE = {
 class Bot(object):
 
     def __init__(self, decider, logfn=None):
-        '''Takes an object, decider, which makes decisions about the game.
-        Optionally takes a function which logs any strings applied to it.
+        '''Takes a Decider instance which makes decisions about the game.
+        Optionally takes a function to logs strings.
 
-        The decider must have the following methods:
+        The Decider must have the following methods:
 
             def start(game):
-                pass
 
-            def think(water, food, enemyhill, enemyant, myhill, myant):
-                pass
+                -- will be called at the start of the game
+                -- the argument is a dictionary with the following keys:
 
-        start
+                    loadtime        (milliseconds)
+                    turntime        (milliseconds)
+                    rows            (height)
+                    cols            (width)
+                    turns           (turn limit)
+                    viewradius2     (squared)
+                    viewradius
+                    attackradius2   (squared)
+                    attackradius
+                    spawnradius2    (squared)
+                    spawnradius
+                    player_seed     (random seed)
 
-        -- will be called at the start of the game
-        -- arguments are as follows:
+            def think(water, food, enemyhill, enemyant, myhill, myant, mydead):
 
-            A dictionary, game, with the following keys:
+                -- will be called for each turn
+                -- arguments are dictionaries mapping (row, col) locations to
+                   metadata:
 
-                loadtime        (milliseconds)
-                turntime        (milliseconds)
-                rows            (height)
-                cols            (width)
-                turns           (turn limit)
-                viewradius2
-                viewradius
-                attackradius2
-                attackradius
-                spawnradius2
-                spawnradius
-                player_seed
+                    water       True
+                    food        True
+                    enemyhill   int         (owner)
+                    enemyant    int         (owner)
+                    myhill      bool        (active and visible)
+                    myant       int, loc    (id, oldloc)
+                    mydead      int, loc    (id, oldloc)
 
-        think
-
-        -- will be called for each game turn
-        -- arguments are as follows:
-
-            Most arguments are dictionaries mapping (row, col) locations to
-            either boolean or integer values.
-
-            water       True
-            food        True
-            enemyhill   int (owner)
-            enemyant    int (owner)
-            myhill      True
-            myant       int (id), oldloc
-
-            mydead      [int] (ids of dead ants)
-
-        -- return value must be as follows:
-
-            A dictionary having the same set of keys as myant, each of which
-            maps to a list of prioritized vectors including 'N', 'E', 'S', 'W',
-            and '=' (indicating no movement).
+                -- return value must be a dictionary having the same set of
+                   keys as myant, each mapping to a prioritized list of vectors
+                   from this list: N, E, S, W, =
 
         '''
         self.decider = decider
@@ -91,9 +78,9 @@ class Bot(object):
             self.handlers[msg] = self.handle_number
         for msg in ['attackradius2','spawnradius2','viewradius2']:
             self.handlers[msg] = self.handle_radius
-        self.handlers['ready'] = lambda *args: self.pregame() or ['go']
-        self.handlers['turn'] = lambda msg, num: self.presense(msg, num)
-        self.handlers['go'] = lambda *args: self.postsense() + ['go']
+        self.handlers['ready'] = lambda *args   : self.pregame() or ['go']
+        self.handlers['turn'] = lambda msg, num : self.presense(msg, num)
+        self.handlers['go'] = lambda *args      : self.postsense() + ['go']
         self.handlers['w'] = lambda msg, r, c   : self.sense_water((r, c))
         self.handlers['f'] = lambda msg, r, c   : self.sense_food ((r, c))
         self.handlers['h'] = lambda msg, r, c, o: self.sense_hill((r, c), o)
@@ -101,20 +88,20 @@ class Bot(object):
         self.handlers['d'] = lambda msg, r, c, o: self.sense_dead((r, c), o)
         # game details
         self.game = {}
-        self.turn = None
-        self.timer = None
-        # sensory maps { ... (row, col): or<bool,int>, ... }
-        self.water     = {}
-        self.food      = {}
-        self.enemyhill = {}
-        self.enemyant  = {}
-        self.myhill0   = {}
-        self.myhill    = {}
-        self.myant     = {}
-        self.mydead    = 0
-        # ant state
-        self.anttotal = 0
-        self.antplans  = {}
+        # game state (never cleared)
+        self.anttotal   = 0
+        self.water      = {} # map loc --> True
+        self.myhill0    = {} # map loc --> False
+        # turn state (cleared each turn; usually in presense)
+        self.timer      = None
+        self.turn       = None
+        self.food       = {} # map loc --> True
+        self.enemyhill  = {} # map loc --> int
+        self.enemyant   = {} # map loc --> int
+        self.myhill     = {} # map loc --> True
+        self.myant      = {} # map loc --> int, loc (id, oldloc)
+        self.mydead     = {} # map loc --> int, loc (id, oldloc)
+        self.antplans   = {} # map loc (new) --> loc, int, str, list<str> (old, id, vector, vectors)
 
     def handle(self, s):
         args = s.split()
@@ -132,6 +119,20 @@ class Bot(object):
         random_seed(self.game['player_seed'])
         self.decider.start(self.game)
 
+    def presense(self, msg, num):
+        self.timer = DateTime.now()
+        self.turn = num
+        self.logfn and self.logfn('TURN #{} presense'.format(num))
+        self.food.clear()
+        self.enemyhill.clear()
+        self.enemyant.clear()
+        self.myhill.clear()
+        self.myant.clear()
+        self.mydead.clear()
+        if self.logfn:
+            for k, v in self.antplans.iteritems():
+                self.logfn('plan {} --> {}'.format(k, v))
+
     def sense_water(self, loc):
         self.water[loc] = True
 
@@ -148,63 +149,94 @@ class Bot(object):
 
     def sense_ant(self, loc, owner):
         if owner == 0:
-            # did some ant plan to be at loc?
-            if loc in self.antplans:
-                # recognize it as that ant
-                aO, aI, aD, aV = self.antplans[loc]
-                del self.antplans[loc]
-                self.myant[loc] = (aI, aO)
-                self.logfn and self.logfn('Ant #{} at {} -{}-> {}'.format(aI, aO, aD, loc))
-                return
-            # no ant planned to be at loc...
-            r, c = loc
-            fail = [(f, self.antplans[f]) \
-                    for f in [(r-1,c), (r+1,c), (r,c-1), (r,c+1)] \
-                    if f in self.antplans and self.antplans[f][0] == loc]
-            # did some ant fail to follow its plan?
-            if fail:
-                # fail is one ant which was at loc but planned to be adjacent to it
-                assert len(fail) == 1
-                # recognize it as the one which planned to move but failed
-                aN, (aO, aI, aD, aV) = fail[0]
-                del self.antplans[aN]
-                self.myant[loc] = (aI, aO)
-                self.logfn and self.logfn('Ant #{} at {} -FAIL{}-> {}'.format(aI, aO, aD, aN))
-                return
-            # no ant was there before...
-            # recognize it as a new ant (let's hope on a hill!)
-            self.myant[loc] = aI, loc = (self.anttotal, loc)
-            self.anttotal += 1
-            self.logfn and self.logfn('Ant #{} born at {}'.format(aI, loc))
+            self.myant[loc] = True
         else:
-            # just somebody else's ant
             self.enemyant[loc] = owner
 
     def sense_dead(self, loc, owner):
         if owner == 0:
-            self.logfn and self.logfn('Ant died at {}'.format(loc))
-            self.mydead += 1
+            self.mydead[loc] = True
 
-    def presense(self, msg, num):
-        self.timer = DateTime.now()
-        self.turn = num
-        self.logfn and self.logfn('TURN #{} presense'.format(num))
-        self.food.clear()
-        self.enemyhill.clear()
-        self.enemyant.clear()
-        self.myhill.clear()
-        self.myant.clear()
-        self.mydead = 0
+    def recognize_moved(self, loc):
+        '''Recognize an ant which moved. Clear its plan.
+        Return a 2-tuple of loc & plan.
+
+        '''
+        if loc in self.antplans:
+            return loc, self.antplans.pop(loc)
+        # unrecognized
+        return None, 4 * (None,)
+
+    def recognize_stuck(self, loc):
+        '''Recognize an ant which failed to move. Clear its plan.
+        Return a 2-tuple of loc & plan.
+
+        '''
+        r, c = loc
+        fail = [f for f in [(r-1,c), (r+1,c), (r,c-1), (r,c+1)] \
+                if f in self.antplans and self.antplans[f][0] == loc]
+        if fail:
+            assert len(fail) == 1
+            return fail[0], self.antplans.pop(fail[0])
+        # unrecognized
+        return None, 4 * (None,)
+
+    @staticmethod
+    def recognize(recognizer, sensor, fromdict, todict):
+        '''sense the ants in fromdict that the recognizer finds'''
+        for loc in fromdict.keys():
+            plan = recognizer(loc)
+            if plan[0]:
+                del fromdict[loc]
+                sensor(todict, plan)
+
+    def gen_sensor(self, msg=''):
+        #staticmethod
+        def fn(todict, plan):
+            aN, (aO, aI, aD, aV) = plan
+            todict[aN] = aI, aO
+            if self.logfn:
+                if aN == aO:
+                    self.logfn('Ant #{} at {} -{}-> {}{}'.\
+                               format(aI, aO, aD, aN, ' ' + msg))
+                else:
+                    self.logfn('Ant #{} at {} -FAIL{}-> {}{}'.\
+                               format(aI, aO, aD, aN, ' ' + msg))
+        return fn
 
     def postsense(self):
         self.logfn and self.logfn('TURN #{} postsense '.format(self.turn))
-        self.logfn and self.logfn('antplans: {}'.format(self.antplans))
-        assert self.mydead == len(self.antplans)
+        #
+        # recognize our dead ants
+        mydead = {}
+        self.recognize(self.recognize_moved, self.gen_sensor('and died'), self.mydead, mydead)
+        self.recognize(self.recognize_stuck, self.gen_sensor('and died'), self.mydead, mydead)
+        assert self.mydead == {} # all were recognized
+        self.mydead = mydead
+        del mydead # don't use the local ref
+        #
+        # recognize our living ants
+        myant = {}
+        self.recognize(self.recognize_moved, self.gen_sensor(), self.myant, myant)
+        self.recognize(self.recognize_stuck, self.gen_sensor(), self.myant, myant)
+        for loc in self.myant.keys():
+            assert loc in self.myhill # ants must be born on an anthill
+            del self.myant[loc]
+            aI = self.anttotal
+            self.anttotal += 1
+            myant[loc] = aI, loc
+            self.logfn and self.logfn('Ant #{} at {} just born'.format(aI, loc))
+        assert self.myant == {} # all were recognized
+        self.myant = myant
+        del myant # don't use the local ref
+        #
+        # all living and dead ants are recognized
+        assert self.antplans == {}
         #
         # combine the original hill list with the current hill list
         hills = {}
         hills.update(self.myhill0) # adds false for all my hills
-        hills.update(self.myhill)  # adds true for my hills which are visible (and active)
+        hills.update(self.myhill)  # adds true for my hills which are visible and active
         #
         # query where ants should go
         decidertime = DateTime.now()
@@ -215,7 +247,7 @@ class Bot(object):
             self.enemyant,
             hills,
             self.myant.copy(),
-            [aI for aO, aI, aD, aV in self.antplans.itervalues()]
+            self.mydead,
         )
         decidertime = (DateTime.now() - decidertime).total_seconds()
         #
@@ -240,6 +272,7 @@ class Bot(object):
                    if newloc not in self.water and newloc not in self.food \
                    else poporder(oldloc, vectors)
         #
+        # assign ants to locations; resolve conflicts for the same location
         # gale-shapley stable matching algorithm
         # - single men "moves" oldloc:(identity,[vector])
         # - single women "antplans" any key which isn't set

@@ -109,8 +109,7 @@ class Decider(object):
         # determine what is currently visible
         m = {}
         for antloc in myant:
-            for r, c in protocol.allinradius(self.g['viewradius'],
-                                             self.g['viewradius2'], antloc):
+            for _, (r, c) in protocol.allinradius(self.g['viewradius'], antloc):
                 r %= self.g['rows']
                 c %= self.g['cols']
                 m[r, c] = '.'

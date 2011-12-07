@@ -1,5 +1,6 @@
 # stdlib
 import random
+import itertools as it
 from datetime import datetime as DateTime
 # local
 import antmath
@@ -32,19 +33,19 @@ class Decider(object):
     def start(self, game):
         '''Set up the decider according to the game specifications.'''
         self.g.update(game)
+        self.size = game['rows'], game['cols']
         self.MAXAGE = 2.0 * game['viewradius']
-        self.PERIMETER = 4 * game['viewradius2']
-        self.PERIMETER2 = self.PERIMETER ** 2
+        self.PERIMETER = .8 * game['viewradius2']
         self.ENEMYHILL = (0**2,
                           0**2)
         self.ENEMYANT = ((game['attackradius'] + 3) ** 2,
-                         (game['viewradius']) ** 2)
+                         (game['viewradius'  ] + 2) ** 2)
         self.ENEMYANTBATTLE = ((game['attackradius'] + 1) ** 2,
-                               (game['attackradius'] + 6) ** 2)
+                               (game['attackradius'] + 3) ** 2)
         self.FOOD = (1**2,
                      1**2)
-        self.MYHILL = (2 ** 2,
-                       6 ** 2)
+        self.MYHILL = (4 ** 2,
+                       8 ** 2)
 
     def think(self, dirt, food, enemyhill, enemyant, myhill, myant, mydead):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
@@ -81,9 +82,9 @@ class Decider(object):
         passive = {loc:rad for loc, rad in passive.iteritems() \
                    if loc in self.age and self.age[loc] <= self.MAXAGE}
         # if there are enemies near a hill, protect the hill
-        nearhill = [antmath.allinradius(self.PERIMETER, self.PERIMETER2, loc) \
-                    for loc in myhill]
-        if set(enemyant).intersection(nearhill):
+        if any(any(antmath.nearest_unwrapped_loc(hill, self.size, e)[0] \
+                   <= self.PERIMETER for e in enemyant) \
+               for hill in myhill):
             passive.update({loc:self.MYHILL for loc in myhill})
         # log about passive goals
         self.logfn('\npassive goals: {}\nages: {}'.format(passive, self.age)
@@ -196,8 +197,7 @@ class Decider(object):
         # determine what is currently visible
         m = {}
         for antloc in myant:
-            for r, c in antmath.allinradius(self.g['viewradius'],
-                                            self.g['viewradius2'], antloc):
+            for _, (r, c) in antmath.allinradius(self.g['viewradius'], antloc):
                 r %= self.g['rows']
                 c %= self.g['cols']
                 m[r, c] = '.'

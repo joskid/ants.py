@@ -1,5 +1,8 @@
+# stdlib
+import itertools as it
 # local
 from hedge import Hedge
+import antmath
 #
 import clump
 import defend
@@ -54,17 +57,15 @@ def meta(logfn, game):
     faith = hedge.next()
     #
     # initialize environment (blank)
-    water = {}
-    food = {}
-    enemyhill = {}
-    enemyant = {}
-    myhill = {}
-    myant = {}
-    mydead = []
+    # tuple of: water, food, enemyhill, enemyant, myhill, myant, mydead
+    environment = ({}, {}, {}, {}, {}, {}, [])
     #
     # loop
     while True:
-        # process/digest environment
+        # process/digest environment into ant-perspectives
+        antenvs = []
+        for aN, (aI, aO) in myant.iteritems():
+            pass
         # query each strategy to impose a distribution over all ants
         #   s1 =
         #       a1 = { n:50%, e:50% }
@@ -80,8 +81,39 @@ def meta(logfn, game):
         #   a2 = { e:95%, =:5% }
         # generate one random number per ant to decide where to go
         # store decisions and weights until next round
-        dirt, food, enemyhill, enemyant, myhill, myant, mydead = yield myant
+        environment = yield myant
         # figure out whether each ant's action was good or bad
         # generate a loss value for each ant relative to the number of ants
         # -- do we need to weight losses according to last turn's weights? no...
         # -- indicate loss for strategy(s) which were followed for this ant
+
+
+
+# A Size is a tuple:
+# -- integer - height
+# -- integer - width
+
+# A Loc is a tuple:
+# -- integer - row location
+# -- integer - column location
+
+# A GoalDict is a dictionary:
+# -- Loc : or<bool,int,tuple> - maps locations to goal information
+
+# An Goal is a tuple:
+# -- integer - squared distance goal is from onlooker
+# -- Loc - nearest location of goal relative to onlooker
+
+# An AntPerspective is a tuple:
+# -- Loc - location of this ant (onlooker)
+# -- list<Goal> - goals within viewradius2 of this ant
+
+def digest(gd, size, rad, aloc):
+    '''Convert a colony-wide view of the environment to an ant's view.
+    GoalDict Size int Loc --> AntPerspective
+
+    '''
+    rad2 = rad ** 2
+    return sorted((dist2, gloc) \
+                  for dist2, gloc in antmath.allinradius(rad, aloc) \
+                  if dist2 <= rad2 and antmath.wrap_loc(gloc, size) in gd)

@@ -1,5 +1,7 @@
 # stdlib
+from math import fsum
 import itertools as it
+import random
 # local
 from hedge import Hedge
 import antmath
@@ -218,49 +220,64 @@ def meta(logfn, game):
 
         # query each strategy to impose a distribution over all ants
         # eg:
-        #   strategy1 =
-        #               ant1 = { n:50%, e:50% }
-        #               ant2 = { e:100% }
-        #   strategy2 =
-        #               ant1 = { n:100% }
-        #               ant2 = { e:75%, =:25% }
+        # dists = [{1: {'N': 0.50, 'E': 0.50, 'S': 0.00, 'W': 0.00, '=': 0.00},
+        #           2: {'N': 0.00, 'E': 1.00, 'S': 0.00, 'W': 0.00, '=': 0.00} },
+        #          {1: {'N': 1.00, 'E': 0.00, 'S': 0.00, 'W': 0.00, '=': 0.00},
+        #           2: {'N': 0.00, 'E': 0.75, 'S': 0.00, 'W': 0.00, '=': 0.25} } ]
+
         dists = [e.send(env) for e in experts]
-        assert all(sd.viewkeys() ^ env.myid == set() and \
-                   all(1.0 == fsum(ad.itervalues()) \
-                       for ad in sd.itervalues()) \
-                   for sd in dists)
-        # assert: strategies produce distributions (sum to 1) over _all_ ants
+
+        assert all(sd.viewkeys() ^ env.myid == set() for sd in dists) # all ants
+        assert all(all(ad.viewkeys() ^ set('NESW=') == set() \
+                       for ad in sd.itervalues()) for sd in dists) # all vectors
+        assert all(all(1.0 == fsum(ad.itervalues()) \
+                       for ad in sd.itervalues()) for sd in dists) # sum to 1
 
         # take the weighted linear combination over distributions
         # eg:
-        #   faith =
-        #           strategy1 = 0.8
-        #           strategy2 = 0.2
-        #   lincomb =
-        #           ant1 = { n:60%, e:40% }
-        #           ant2 = { e:95%, =:5% }
+        # faith = [0.8, 0.2]
+        # lincomb = {1: {'N': 0.60, 'E': 0.40, 'S': 0.00, 'W': 0.00, '=': 0.00},
+        #            2: {'N': 0.00, 'E': 0.95, 'S': 0.00, 'W': 0.00, '=': 0.05} }
+        #
+        # actually, each number is really a tuple in which the number is
+        # followed by "blame tags" for later ... these have the form of a dict
+        # which maps strategy indexes to the probality of the vector
+        # eg:
+        # lincomb = {1: {'N': (0.60, {0: 0.50, 1: 1.00}), ...
+
         lincomb = {aI: {vect: (fsum((f * d[aI][vect]) \
                                     for f, d in it.izip(faith, dists)),
-                               ((f * d[aI][vect]) for f, d in it.izip(faith, dists))
-                               )
+                               {i: d[aI][vect] for i, d in enumerate(dists)})
                         for vect in list('NESW=')} \
                    for aI in env.myid}
-        #if aI in d and vect in d[aI]
-        assert lincomb.viewkeys() ^ env.myid == set() and \
-               all(1.0 == fsum(v[0] for v in d.itervalues()) \
+
+        assert all(1.0 == fsum(v[0] for v in d.itervalues()) \
                    for d in lincomb.itervalues())
-        # assert: lincomb is a distribution (sum to 1) over _all_ ants
 
-        # linear combination
-        {v: stats.dotprod(faith, (d['N'] for d in antx-dists)) \
-         for v in list('NESW=')}
+        # generate one random number per ant to decide where they should go
+        decisions = {aI: ... for ... in lincomb.iteritems()}
 
-        # generate one random number per ant to decide where to go
-        # store decisions and weights until next round
+        # yield decisions and get a new environment
         e = yield myant
         env.update_env(e['water'], e['food'], e['enemyhill'], e['enemyant'],
                        e['myhill'], e['myant'])
+
         # figure out whether each ant's action was good or bad
         # generate a loss value for each ant relative to the number of ants
         # -- do we need to weight losses according to last turn's weights? no...
         # -- indicate loss for strategy(s) which were followed for this ant
+
+
+def pick_by_dist(d):
+
+    assert 1.0 == fsum(prob for prob in d.itervalues())
+
+    pdf, cdf = reduce(lambda (pdf, cdf), (vect, prob): \
+                      (pdf + [prob], cdf + [(vect, fsum(pdf + [prob]))]),
+                      d.iteritems(), ([], []))
+
+    pick = random.random() # find first in cdf which is > (not >=) than 'pick'
+
+    return reduce(lambda acc, (vect, cprob): \
+                  (vect, cprob) if cprob > pick and not acc else acc,
+                  cdf, False)[0]

@@ -26,6 +26,23 @@ def wrap_loc(loc, size):
     return row % height, col % width
 
 
+def displace_loc(direction, location):
+    return {'N': lambda loc: (loc[0] - 1, loc[1]    ),
+            'E': lambda loc: (loc[0]    , loc[1] + 1),
+            'S': lambda loc: (loc[0] + 1, loc[1]    ),
+            'W': lambda loc: (loc[0]    , loc[1] - 1),
+            '=': lambda loc: loc,
+            }[direction](location)
+
+
+def neighbors(loc):
+    r, c = loc
+    return [(r-1, c  ),
+            (r  , c+1),
+            (r+1, c  ),
+            (r  , c-1)]
+
+
 def reverse_dir(direction):
     '''What is the opposite NESW direction?'''
     return {'N':'S',

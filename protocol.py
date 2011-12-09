@@ -3,6 +3,8 @@ from datetime import datetime as DateTime
 from math import sqrt as math_sqrt
 from random import seed as random_seed
 from collections import defaultdict as collections_defaultdict
+# local
+import antmath
 
 
 # ant property identifier suffixes:
@@ -11,15 +13,6 @@ from collections import defaultdict as collections_defaultdict
 #   I=identity
 #   V=vectorlist
 #   D=vector(direction)
-
-
-DISPLACE = {
-    'N': lambda loc: (loc[0] - 1, loc[1]    ),
-    'E': lambda loc: (loc[0]    , loc[1] + 1),
-    'S': lambda loc: (loc[0] + 1, loc[1]    ),
-    'W': lambda loc: (loc[0]    , loc[1] - 1),
-    '=': lambda loc: loc,
-}
 
 
 ###############################################################################
@@ -172,9 +165,8 @@ class Bot(object):
         Return a 2-tuple of loc & plan.
 
         '''
-        r, c = loc
-        fail = [f for f in [(r-1,c), (r+1,c), (r,c-1), (r,c+1)] \
-                if f in self.antplans and self.antplans[f][0] == loc]
+        fail = [f for f in antmath.neighbors(loc) \
+                if self.wrap(f) in self.antplans and self.antplans[f][0] == loc]
         if fail:
             assert len(fail) == 1
             return fail[0], self.antplans.pop(fail[0])
@@ -267,7 +259,7 @@ class Bot(object):
         # pop is okay b/c vector lists end with '=' (which locations prefer)
         def poporder(oldloc, vectors):
             vector = vectors.pop(0)
-            newloc = self.wrap(DISPLACE[vector](oldloc))
+            newloc = self.wrap(antmath.displace_loc(vector, oldloc))
             return (newloc, vector) \
                    if newloc not in self.water and newloc not in self.food \
                    else poporder(oldloc, vectors)

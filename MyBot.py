@@ -45,6 +45,7 @@ def main():
         decname, decclass = decider.DEFAULT
     #
     # logger option
+    sys.argv.append(LOGOPT)
     if LOGOPT in sys.argv:
         sys.argv.remove(LOGOPT)
         logger = genlogger('log-'+decname+'.log')
@@ -57,7 +58,7 @@ def main():
     # main loop
     while True:
         heard = listen()
-        if heard == 'turn 20':
+        if heard == 'turn 100':
             return
         replies = bot.handle(heard)
         if replies:

@@ -124,7 +124,7 @@ class Bot(object):
         self.mydead.clear()
         if self.logfn:
             for k, v in self.antplans.iteritems():
-                self.logfn('plan {} --> {}'.format(k, v))
+                self.logfn('plan {} <-- {}'.format(k, v))
 
     def sense_water(self, loc):
         self.water[loc] = True
@@ -189,10 +189,10 @@ class Bot(object):
             todict[aN] = aI, aO
             if self.logfn:
                 if aN == aO:
-                    self.logfn('Ant #{} at {} -{}-> {}{}'.\
+                    self.logfn('Ant #{} at {} -FAIL{}-> {}{}'.\
                                format(aI, aO, aD, aN, ' ' + msg))
                 else:
-                    self.logfn('Ant #{} at {} -FAIL{}-> {}{}'.\
+                    self.logfn('Ant #{} at {} -{}-> {}{}'.\
                                format(aI, aO, aD, aN, ' ' + msg))
         return fn
 

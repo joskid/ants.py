@@ -25,7 +25,7 @@ def tell(s):
     sys.stdout.flush()
 
 
-if __name__ == '__main__':
+def main():
     DECOPT = '--decider'
     LOGOPT = '--log'
     #
@@ -57,6 +57,12 @@ if __name__ == '__main__':
     # main loop
     while True:
         heard = listen()
+        if heard == 'turn 20':
+            return
         replies = bot.handle(heard)
         if replies:
             tell('\n'.join(replies))
+
+
+if __name__ == '__main__':
+    main()

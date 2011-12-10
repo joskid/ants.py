@@ -14,7 +14,7 @@ DECIDERS = {
 }
 
 
-DEFAULT = ('KMeans', KMeans)
+DEFAULT = ('Hedge', Hedge)
 
 
 __all__ = [

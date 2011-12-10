@@ -5,7 +5,7 @@ import random
 # local
 from hedge import Hedge
 import antmath
-import stats
+import environment
 #
 import clump
 import defend
@@ -22,36 +22,6 @@ Stochastically learns which of several strategies are best via the hedge
 algorithm.
 
 (5)
-
-
-A Size is a tuple:
--- integer - height
--- integer - width
-
-A Loc is a tuple:
--- integer - row location
--- integer - column location
-
-A GoalDict is a dictionary: Loc --> any
--- maps locations to goal information
-
-An Goal is a tuple:
--- integer - squared distance goal is from onlooker
--- Loc - nearest location of goal relative to onlooker
-
-An AntPerspective is a tuple:
--- Loc - location of this ant (onlooker)
--- list<Goal> - goals within viewradius2 of this ant
-
-An Environment is a dictionary: str --> dict
--- 'water' --> GoalDict
--- 'food' --> GoalDict
--- 'enemyhill' --> GoalDict
--- 'enemyant' --> GoalDict
--- 'myhill' --> GoalDict
--- 'myant' --> GoalDict
--- 'mydead' --> GoalDict
-
 '''
 
 
@@ -64,135 +34,34 @@ class Decider(object):
     def __init__(self, logfn=None):
         self.log = logfn
         self.__think = None
+        self.env = None
 
     def start(self, game):
         '''Set up the decider according to the game specifications.'''
         self.__think = meta(self.log, game)
         self.__think.next()
+        self.env = environment.LazyEnvDigest(
+            (game['rows'], game['cols']), game['viewradius'])
 
-    def think(self, water, food, enemyhill, enemyant, myhill, myant, mydead):
+    def think(self, *args):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
-        return self.__think.send({
-            'water'     :water,
-            'food'      :food,
-            'enemyhill' :enemyhill,
-            'enemyant'  :enemyant,
-            'myhill'    :myhill,
-            'myant'     :myant,
-            'mydead'    :mydead,
-        })
+        self.env.update_env(*args)
+        return self.__think.send(self.env)
 
 
 ###############################################################################
 
 
-class LazyEnvDigest(object):
-    '''Digest the environment into ant perspectives when requested.
+def brownian_gendist(logfn, game):
+    vects = list('NESW=')
+    pdf = len(vects) * [1.0 / len(vects)]
+    dist = None # first distribution is thrown out
 
-    Perspectives persist until the environment is updated.
-
-    '''
-
-    def __init__(self, size, radius):
-        self.size = size
-        self.rad = radius
-        self.rad2 = radius ** 2
-        # environment data
-        self.env = { # map: wrapped Loc --> metadata
-            'food'      :{},
-            'enemyhill' :{},
-            'enemyant'  :{},
-            'myhill'    :{},
-            'myant'     :{},
-        }
-        self.envdirt = set()
-        for row in size[0]:
-            for col in size[1]:
-                self.envdirt.add((row, col))
-        # ant perspective data
-        self.persp = { # map: wrapped Loc --> [map: unwrapped Loc --> metadata]
-            'food'      :{},
-            'enemyhill' :{},
-            'enemyant'  :{},
-            'myhill'    :{},
-            'myant'     :{},
-        }
-        self.perspdirt = {}
-        # data for iteration
-        self.myloc = {} # loc --> id, oldloc
-        self.myid = {} # id --> loc, oldloc
-        # delicious curry
-        self.wrap = lambda loc: antmath.wrap_loc(loc, self.size)
-        self.allinradius = lambda loc: antmath.allinradius(self.rad, loc)
-        # functions for lazy people
-        self.dist2 = lambda a, b: antmath.distance2(a, b)
-        self.tonari = lambda loc: antmath.neighbors(loc)
-        # actually useful functions
-        self.wrapiter = lambda seq: (self.wrap(loc) for loc in seq)
-
-    def update_env(self, water, food, enemyhill, enemyant, myhill, myant):
-        # environment data
-        self.env = {
-            'food'      :food,
-            'enemyhill' :enemyhill,
-            'enemyant'  :enemyant,
-            'myhill'    :myhill,
-            'myant'     :myant,
-        }
-        for loc in water.iterkeys():
-            self.envdirt.discard(loc)
-        # ant perspective data
-        for apm in self.persp.itervalues():
-            apm.clear()
-        # data for iteration
-        self.myloc = myant
-        self.myid = {aI: (aN, aO) for aN, (aI, aO) in myant.iteritems()}
-
-    @property
-    def food(self):
-        return self.env['food']
-
-    @property
-    def enemyhill(self):
-        return self.env['enemyhill']
-
-    @property
-    def enemyant(self):
-        return self.env['enemyant']
-
-    @property
-    def myhill(self):
-        return self.env['myhill']
-
-    @property
-    def myant(self):
-        return self.env['myant']
-
-    def digest(self, key, aloc):
-        '''Convert a colony-wide view of a map to an ant's view.
-        str Loc --> list<Goal>
-
-        '''
-        aloc = self.wrap(aloc)
-        # create a persistent view of reachable dirt within the radius
-        if aloc not in self.perspdirt:
-            self.perspdirt[aloc] = bfs = {}
-            fringe = [(aloc, 0.0)]
-            while fringe:
-                loc, dist2 = fringe.pop(0)
-                bfs[loc] = dist2
-                fringe.extend(
-                    (n, self.dist2(aloc, n)) for n in self.tonari(loc) \
-                    if self.wrap(n) in self.envdirt and n not in bfs \
-                    and self.dist2(aloc, n) <= self.rad2)
-        # create a short-term view of goals on that dirt
-        apm = self.persp[key]
-        if aloc not in apm:
-            apm[aloc] = sorted(
-                (dist2, gloc) \
-                for gloc, dist2 in self.perspdirt[aloc].iteritems() \
-                if self.wrap(gloc) in self.env[key])
-        return apm[aloc]
+    rand = {v: p for v, p in zip(vects, pdf)}
+    while True:
+        env = yield dist
+        r = rand.copy()
+        dist = {aI:r for aI in env.myid}
 
 
 ###############################################################################
@@ -201,33 +70,31 @@ class LazyEnvDigest(object):
 def meta(logfn, game):
 
     # experts (generators)
-    experts = [e(logfn, game) for e in (gather.gendist)]
+    experts = [e(logfn, game) for e in (brownian_gendist, gather.gendist)]
 ##               (clump.gendist, march.gendist, gather.gendist, defend.gendist,
 ##                explore.gendist)]
     for e in experts:
-        e.next()
+        e.next() # warm up their loop
 
     # learner (generator)
     hedge = Hedge(0.9, len(experts))
     faith = hedge.next()
-    loss = [0] * len(experts)
-
-    # environment
-    env = LazyEnvDigest((game['rows'], game['cols']), game['viewradius'])
 
     # loop
+    env = environment.LazyEnvDigest((0, 0), 0) # will be thrown out anyway
     while True:
+        logfn and logfn('faith: {}'.format(faith))
 
         # query each strategy to impose a distribution over all ants
         # eg:
-        # dists = [{1: {'N': 0.50, 'E': 0.50, 'S': 0.00, 'W': 0.00, '=': 0.00},
-        #           2: {'N': 0.00, 'E': 1.00, 'S': 0.00, 'W': 0.00, '=': 0.00} },
-        #          {1: {'N': 1.00, 'E': 0.00, 'S': 0.00, 'W': 0.00, '=': 0.00},
-        #           2: {'N': 0.00, 'E': 0.75, 'S': 0.00, 'W': 0.00, '=': 0.25} } ]
+        #   dists = [{1: {'N': 0.50, 'E': 0.50, 'S': 0.00, 'W': 0.00, '=': 0.00},
+        #             2: {'N': 0.00, 'E': 1.00, 'S': 0.00, 'W': 0.00, '=': 0.00} },
+        #            {1: {'N': 1.00, 'E': 0.00, 'S': 0.00, 'W': 0.00, '=': 0.00},
+        #             2: {'N': 0.00, 'E': 0.75, 'S': 0.00, 'W': 0.00, '=': 0.25} } ]
 
         dists = [e.send(env) for e in experts]
+        logfn and logfn('dists: {}'.format(dists))
 
-        assert all(sd.viewkeys() ^ env.myid == set() for sd in dists) # all ants
         assert all(all(ad.viewkeys() ^ set('NESW=') == set() \
                        for ad in sd.itervalues()) for sd in dists) # all vectors
         assert all(all(1.0 == fsum(ad.itervalues()) \
@@ -235,49 +102,105 @@ def meta(logfn, game):
 
         # take the weighted linear combination over distributions
         # eg:
-        # faith = [0.8, 0.2]
-        # lincomb = {1: {'N': 0.60, 'E': 0.40, 'S': 0.00, 'W': 0.00, '=': 0.00},
-        #            2: {'N': 0.00, 'E': 0.95, 'S': 0.00, 'W': 0.00, '=': 0.05} }
+        #   faith = [0.8, 0.2]
+        # result:
+        #   lincomb = {1: {'N': 0.60, 'E': 0.40, 'S': 0.00, 'W': 0.00, '=': 0.00},
+        #              2: {'N': 0.00, 'E': 0.95, 'S': 0.00, 'W': 0.00, '=': 0.05} }
         #
-        # actually, each number is really a tuple in which the number is
-        # followed by "blame tags" for later ... these have the form of a dict
-        # which maps strategy indexes to the probality of the vector
+        # actually, each probability is really a 2-tuple in which the second
+        # part is a dict of "blame tags" which maps strategy indexes to the
+        # strategy probality of the vector
         # eg:
-        # lincomb = {1: {'N': (0.60, {0: 0.50, 1: 1.00}), ...
+        #   lincomb = {1: {'N': (0.60, {0: 0.50, 1: 1.00}), ...
+        #
+        # this way we blame strategy 0 half as much as we blame strategy 1 when
+        # moving ant 1 north causes it to die
 
-        lincomb = {aI: {vect: (fsum((f * d[aI][vect]) \
-                                    for f, d in it.izip(faith, dists)),
-                               {i: d[aI][vect] for i, d in enumerate(dists)})
+        lincomb = {aI: {vect: (fsum\
+                               ((f * d[aI][vect]) \
+                                for f, d in it.izip(faith, dists) \
+                                if aI in d),
+                               {i: d[aI][vect] \
+                                for i, d in enumerate(dists) \
+                                if aI in d})
                         for vect in list('NESW=')} \
                    for aI in env.myid}
 
-        assert all(1.0 == fsum(v[0] for v in d.itervalues()) \
-                   for d in lincomb.itervalues())
+        # not every dist in lincomb sums to 1 because some ants were left out by
+        # some strategies; this is relevant in 'distpick'
+        #
+        # brownian_gendist always includes all ants, which prevents us from
+        # having to add in those left out by all strategies
 
-        # generate one random number per ant to decide where they should go
-        decisions = {aI: ... for ... in lincomb.iteritems()}
+        assert lincomb.viewkeys() ^ env.myid == set() # all ants
 
-        # yield decisions and get a new environment
-        e = yield myant
-        env.update_env(e['water'], e['food'], e['enemyhill'], e['enemyant'],
-                       e['myhill'], e['myant'])
+        # probabalistically make each ant's decision; keep data for loss
+        # analysis later and generate moves to yield out
 
-        # figure out whether each ant's action was good or bad
-        # generate a loss value for each ant relative to the number of ants
-        # -- do we need to weight losses according to last turn's weights? no...
-        # -- indicate loss for strategy(s) which were followed for this ant
+        moves = {}
+        decisions = {}
+        for aI, vd in lincomb.iteritems():
+            aN, aO = env.myid[aI]
+            #
+            vector, blame = distpick(vd)
+            decisions[aI] = env.wrap(antmath.displace_loc(vector, aN)), blame
+            moves[aN] = [vector]
+
+        # yield move decisions and get a new environment
+
+        oldfood = env.food
+        logfn and logfn('moves: {}'.format(moves))
+        env = yield moves
+
+        # for each old-ant:
+        #   did it follow the vector we recommended?
+        #     yes-> is it still alive?
+        #             yes-> did the action result in good things?
+        #                     yes-> NO LOSS (0)
+        #                     no--> MINOR LOSS (0, 1)
+        #             no--> MAJOR LOSS (1)
+
+        loss = [[] for e in experts]
+
+        for aI, (vector, blame) in decisions.iteritems():
+            alive = aI in env.myid
+            obey = decisions[aI][0] == \
+                     (env.myid[aI][0] if alive else env.mydead[aI][0])
+            if obey:
+                # determine loss for this ant
+                if alive:
+                    als = 0.0 if any(loc in oldfood for loc in \
+                                     env.wrapiter(env.tonari(aN))) else 0.1
+                else:
+                    als = 1.0
+                # assign loss to each strategy (scaled by probability)
+                for i, prob in blame.iteritems():
+                    loss[i].append(prob * als)
+
+        logfn and logfn('loss: {}'.format(loss))
+
+        # condense loss down to one value (divided by old ant-count) and apply to hedge
+
+        faith = hedge.send([fsum(l) / len(decisions) if decisions else 0.0 \
+                            for l in loss])
 
 
-def pick_by_dist(d):
+def distpick(distblame):
+    '''Randomly pick a key from distblame according to the probabilities.
 
-    assert 1.0 == fsum(prob for prob in d.itervalues())
+    Also return the blame dictionary for that vector.
+    '''
+    _, cdf = reduce(lambda (pdf, cdf), (vect, (prob, _)): \
+                    (pdf + [prob], cdf + [(vect, fsum(pdf + [prob]))]),
+                    distblame.iteritems(),
+                    ([], []))
+    assert round(cdf[-1][1], 6) <= 1.0 # sum to at most 1
 
-    pdf, cdf = reduce(lambda (pdf, cdf), (vect, prob): \
-                      (pdf + [prob], cdf + [(vect, fsum(pdf + [prob]))]),
-                      d.iteritems(), ([], []))
+    # lazily fix distributions which sum to less than 1
+    pick = cdf[-1][1] * random.random()
 
-    pick = random.random() # find first in cdf which is > (not >=) than 'pick'
-
-    return reduce(lambda acc, (vect, cprob): \
-                  (vect, cprob) if cprob > pick and not acc else acc,
-                  cdf, False)[0]
+    # find first prob in cdf which is strictly greater than than 'pick'
+    vector = reduce(lambda acc, (vect, cprob): \
+                    (vect, cprob) if cprob > pick and not acc else acc,
+                    cdf, False)[0]
+    return vector, distblame[vector][1]

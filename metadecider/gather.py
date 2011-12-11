@@ -10,20 +10,19 @@ Assigns no more than one ant to each food; not necessarily the closest ant.
 '''
 
 
-def gendist(logfn, game):
+def genmoves(logfn, game):
 
     # functions
     wrap = lambda loc: antmath.wrap_loc(loc, (game['rows'], game['cols']))
-    default = {v: 0.0 for v in list('NESW=')}
 
     # turn state
     ag = {} # id --> loc (ant ids to goal locs)
     ga = {} # loc --> id (goal locs to ant ids)
-    dist = {} # id --> [vect --> int] (ant ids to vector distributions)
 
     # loop
+    moves = {} # id --> vect (ant ids to vector distributions)
     while True:
-        env = yield dist
+        env = yield moves
 
         # for dead ants
         for aN, (aI, aN) in env.mydead.iteritems():
@@ -53,11 +52,10 @@ def gendist(logfn, game):
         # for ants with goals
         for aI, goal in ag.items():
             aN, aO = env.myid[aI]
-            # set dist to move toward our goal if we have one
+            # set to move toward our goal if we have one
             if aI in ag:
                 vect1, vect2 = antmath.naive_dir(aN, ag[aI])
-                dist[aI] = default.copy()
-                dist[aI].update({vect1: 0.75, vect2: 0.25})
-            # remove our dist entry if we don't have a goal
-            elif aI in dist:
-                dist.pop(aI)
+                moves[aI] = vect1
+            # remove our moves entry if we don't have a goal
+            elif aI in moves:
+                moves.pop(aI)

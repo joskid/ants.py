@@ -41,7 +41,7 @@ class Decider(object):
         self.__think = meta(self.log, game)
         self.__think.next()
         self.env = environment.LazyEnvDigest(
-            (game['rows'], game['cols']), game['viewradius'])
+            (game['rows'], game['cols']), game['viewradius'], self.log)
 
     def think(self, *args):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
@@ -52,16 +52,12 @@ class Decider(object):
 ###############################################################################
 
 
-def brownian_gendist(logfn, game):
+def brownian_genmoves(logfn, game):
     vects = list('NESW=')
-    pdf = len(vects) * [1.0 / len(vects)]
-    dist = None # first distribution is thrown out
-
-    rand = {v: p for v, p in zip(vects, pdf)}
+    moves = None # first move set is thrown out
     while True:
-        env = yield dist
-        r = rand.copy()
-        dist = {aI:r for aI in env.myid}
+        env = yield moves
+        moves = {aI:random.choice(vects) for aI in env.myid}
 
 
 ###############################################################################
@@ -71,17 +67,16 @@ def meta(logfn, game):
 
     # experts (generators)
     experts = [e(logfn, game) for e in (brownian_gendist, gather.gendist)]
-##               (clump.gendist, march.gendist, gather.gendist, defend.gendist,
-##                explore.gendist)]
     for e in experts:
-        e.next() # warm up their loop
+        e.next() # coroutine warmup
 
     # learner (generator)
-    hedge = Hedge(0.9, len(experts))
+    # 0.9 learns slowly and 0.1 learns quickly
+    hedge = Hedge(0.25, len(experts))
     faith = hedge.next()
 
     # loop
-    env = environment.LazyEnvDigest((0, 0), 0) # will be thrown out anyway
+    env = environment.LazyEnvDigest((0, 0), 0, None) # will be thrown out
     while True:
         logfn and logfn('faith: {}'.format(faith))
 
@@ -92,8 +87,9 @@ def meta(logfn, game):
         #            {1: {'N': 1.00, 'E': 0.00, 'S': 0.00, 'W': 0.00, '=': 0.00},
         #             2: {'N': 0.00, 'E': 0.75, 'S': 0.00, 'W': 0.00, '=': 0.25} } ]
 
-        dists = [e.send(env) for e in experts]
-        logfn and logfn('dists: {}'.format(dists))
+        movelists = [e.send(env) for e in experts]
+        for i, moves in enumerate(movelists):
+            logfn and logfn('moves: strat{} moves{}'.format(i, moves))
 
         assert all(all(ad.viewkeys() ^ set('NESW=') == set() \
                        for ad in sd.itervalues()) for sd in dists) # all vectors
@@ -125,6 +121,8 @@ def meta(logfn, game):
                                 if aI in d})
                         for vect in list('NESW=')} \
                    for aI in env.myid}
+        for aI, dist in lincomb.iteritems():
+            logfn and logfn('lincomb: ant{} --> {}'.format(aI, sorted([(v, p) for v, (p, b) in dist.iteritems()])))
 
         # not every dist in lincomb sums to 1 because some ants were left out by
         # some strategies; this is relevant in 'distpick'
@@ -148,9 +146,10 @@ def meta(logfn, game):
 
         # yield move decisions and get a new environment
 
-        oldfood = env.food
+        oldf = env.food.copy()
         logfn and logfn('moves: {}'.format(moves))
         env = yield moves
+        assert oldf is not env.food
 
         # for each old-ant:
         #   did it follow the vector we recommended?
@@ -164,18 +163,17 @@ def meta(logfn, game):
 
         for aI, (vector, blame) in decisions.iteritems():
             alive = aI in env.myid
-            obey = decisions[aI][0] == \
-                     (env.myid[aI][0] if alive else env.mydead[aI][0])
+            aN, aO = env.myid[aI] if alive else env.mydead[aI]
+            obey = decisions[aI][0] == aN
             if obey:
                 # determine loss for this ant
-                if alive:
-                    als = 0.0 if any(loc in oldfood for loc in \
-                                     env.wrapiter(env.tonari(aN))) else 0.1
-                else:
-                    als = 1.0
-                # assign loss to each strategy (scaled by probability)
-                for i, prob in blame.iteritems():
-                    loss[i].append(prob * als)
+                als = (0.0 if goodmove(oldf, env, aN, logfn) else 0.1) \
+                      if alive else 1.0
+                for i in blame:
+                    loss[i].append(als)
+##                # assign loss to each strategy (scaled by probability)
+##                for i, prob in blame.iteritems():
+##                    loss[i].append(prob * als)
 
         logfn and logfn('loss: {}'.format(loss))
 
@@ -183,6 +181,13 @@ def meta(logfn, game):
 
         faith = hedge.send([fsum(l) / len(decisions) if decisions else 0.0 \
                             for l in loss])
+
+
+def goodmove(oldfood, env, aloc, logfn):
+    '''Did any locations neighboring the ant contain food last turn?'''
+    logfn('goodmove {} {}'.format(
+        aloc, [loc in oldfood for loc in env.wrapiter(env.tonari(aloc))]))
+    return any(loc in oldfood for loc in env.wrapiter(env.tonari(aloc)))
 
 
 def distpick(distblame):

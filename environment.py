@@ -9,12 +9,17 @@ A Size is a tuple:
 -- integer - height
 -- integer - width
 
-A Loc is a tuple:
+A wLoc is a tuple:
 -- integer - row location
 -- integer - column location
+Must be a location inside the borders of the actual map.
 
-A GoalDict is a dictionary: Loc --> any
--- maps locations to goal information
+An unwLoc is a wLoc without the restriction that the location must be within the
+map borders. Negative values and those greater than the Size of the map are both
+okay.
+
+A GoalDict is a dictionary: wLoc --> any
+Maps locations to goal information.
 
 An Goal is a tuple:
 -- integer - squared distance goal is from onlooker
@@ -34,12 +39,14 @@ class LazyEnvDigest(object):
 
     '''
 
-    def __init__(self, size, radius):
+    def __init__(self, size, radius, logfn):
+        self.logfn = logfn
         self.size = size
         self.rad = radius
         self.rad2 = radius ** 2
         # environment data
-        self.env = { # map: wrapped Loc --> metadata
+        self.env = {            # wLoc --> metadata
+            'water'     :{},
             'food'      :{},
             'enemyhill' :{},
             'enemyant'  :{},
@@ -47,14 +54,12 @@ class LazyEnvDigest(object):
             'myant'     :{},
             'mydead'    :{},
         }
-        self.envdirt = set()
-        for row in xrange(size[0]):
-            for col in xrange(size[1]):
-                self.envdirt.add((row, col))
-        self.__myid = None # id --> loc, oldloc
-        self.__mydeadid = None # id --> loc, oldloc
+        self.envwater = set()
+        self.__myid = None      # id --> wLoc, old_wLoc
+        self.__mydeadid = None  # id --> wLoc, old_wLoc
         # ant perspective data
-        self.persp = { # map: wrapped Loc --> [map: unwrapped Loc --> metadata]
+        self.persp = {          # wLoc --> (bool, list<Goal>)
+            'water'     :{},
             'food'      :{},
             'enemyhill' :{},
             'enemyant'  :{},
@@ -62,20 +67,20 @@ class LazyEnvDigest(object):
             'myant'     :{},
             'mydead'    :{},
         }
-        self.perspdirt = {}
-        # delicious curry
+        # curried functions
         self.wrap = lambda loc: antmath.wrap_loc(loc, self.size)
         self.allinradius = lambda loc: antmath.allinradius(self.rad, loc)
-        # functions for lazy people
+        # shortened functions
         self.dist2 = lambda a, b: antmath.distance2(a, b)
         self.tonari = lambda loc: antmath.neighbors(loc)
-        # actually useful functions
+        # utility functions
         self.wrapiter = lambda seq: (self.wrap(loc) for loc in seq)
 
-    def update_env(self, water, food, enemyhill, enemyant, myhill, myant,
-                   mydead):
+    def update_env(self,
+                   water, food, enemyhill, enemyant, myhill, myant, mydead):
         # environment data
         self.env = {
+            'water'     :water,
             'food'      :food,
             'enemyhill' :enemyhill,
             'enemyant'  :enemyant,
@@ -83,12 +88,16 @@ class LazyEnvDigest(object):
             'myant'     :myant,
             'mydead'    :mydead,
         }
-        for loc in water.iterkeys():
-            self.envdirt.discard(loc)
-        self.__myid = None # id --> loc, oldloc
+        self.envwater = self.envwater | water.viewkeys()
+        self.__myid = None
+        self.__mydeadid = None
         # ant perspective data
         for apm in self.persp.itervalues():
             apm.clear()
+
+    @property
+    def water(self):
+        return self.env['water']
 
     @property
     def food(self):
@@ -117,39 +126,79 @@ class LazyEnvDigest(object):
     @property
     def myid(self):
         if self.__myid is None:
-            self.__myid = {aI: (aN, aO) \
-                           for aN, (aI, aO) in self.myant.iteritems()}
+            self.__myid = {
+                aI: (aN, aO) for aN, (aI, aO) in self.myant.iteritems()}
         return self.__myid
 
     @property
     def mydeadid(self):
         if self.__mydeadid is None:
-            self.__mydeadid = {aI: (aN, aO) \
-                               for aN, (aI, aO) in self.mydead.iteritems()}
-        return self.__myid
+            self.__mydeadid = {
+                aI: (aN, aO) for aN, (aI, aO) in self.mydead.iteritems()}
+        return self.__mydeadid
+
+##    def bfsdigest(self, key, aloc):
+##        '''Expensive. Digest an ant's environment for objective reachability.
+##        str wLoc --> list<Goals>
+##        '''
+##        apm = self.persp[key] # wLoc --> [wLoc --> (bool, list<Goal>)]
+##
+##        self.digest(key, aloc)
+##
+##        bfs, ap = apm[aloc]
+##        if not bfs:
+##            fringe = [(aloc, 0.0)]
+##            bfs = set()
+##            apl[aloc] = []
+##            while fringe:
+##                loc, dist2 = fringe.pop(0)
+##                bfs.add(loc)
+##                if self.wrap(loc) in self.env[key]:
+##                    apl[aloc].append((dist2, loc))
+##                fringe.extend(
+##                    (n, self.dist2(aloc, n)) \
+##                    for n in self.tonari(loc) \
+##                    if n not in bfs and self.wrap(n) not in self.envwater \
+##                    and self.dist2(aloc, n) <= self.rad2
+##                )
+##            apl[aloc].sort()
+##            # mark it with "true"
+##
+##        # a bfs-map is present
+##        return apm[aloc][1]
+##
+##
+####            apm[aloc] = sorted(
+####                (dist2, gloc) \
+####                for gloc, dist2 in 
+######                for gloc, dist2 in self.perspdirt[aloc].iteritems() \
+####                if self.wrap(gloc) in self.env[key])
+##        return apl[aloc]
+##        pass
 
     def digest(self, key, aloc):
-        '''Convert a colony-wide view of a map to an ant's view.
-        str Loc --> list<Goal>
-
+        '''Digest an ant's environment for objective presence.
+        str wLoc --> list<Goals>
         '''
-        aloc = self.wrap(aloc)
-        # create a persistent view of reachable dirt within the radius
-        if aloc not in self.perspdirt:
-            self.perspdirt[aloc] = bfs = {}
-            fringe = [(aloc, 0.0)]
-            while fringe:
-                loc, dist2 = fringe.pop(0)
-                bfs[loc] = dist2
-                fringe.extend(
-                    (n, self.dist2(aloc, n)) for n in self.tonari(loc) \
-                    if self.wrap(n) in self.envdirt and n not in bfs \
-                    and self.dist2(aloc, n) <= self.rad2)
-        # create a short-term view of goals on that dirt
-        apm = self.persp[key]
+        apm = self.persp[key] # wLoc --> (bool, list<Goal>)
         if aloc not in apm:
-            apm[aloc] = sorted(
-                (dist2, gloc) \
-                for gloc, dist2 in self.perspdirt[aloc].iteritems() \
-                if self.wrap(gloc) in self.env[key])
-        return apm[aloc]
+            apm[aloc] = False, sorted((self.dist2(aloc, gloc), gloc) \
+                                      for gloc in self.env[key] \
+                                      if self.dist2(aloc, gloc) <= self.rad2)
+        return apm[aloc][1]
+
+##    def __reachable_dirt(self, aloc):
+##        '''Create a persistent view of reachable dirt within the radius.'''
+##        self.perspdirt[aloc] = bfs = {}
+##        fringe = [(aloc, 0.0)]
+##        while fringe:
+##            loc, dist2 = fringe.pop(0)
+##            bfs[loc] = dist2
+##            fringe.extend(
+##                (n, self.dist2(aloc, n)) for n in self.tonari(loc) \
+##                if self.wrap(n) in self.envdirt \
+##                and n not in bfs \
+##                and self.dist2(aloc, n) <= self.rad2
+##            )
+##        self.logfn and self.logfn(
+##            'reachable dirt {} len {}'.format(aloc, len(bfs)))

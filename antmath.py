@@ -35,6 +35,17 @@ def displace_loc(direction, location):
             }[direction](location)
 
 
+def loc_displacement(oldloc, newloc):
+    rO, cO = oldloc
+    rN, cN = newloc
+    return {(-1, 0):'N',
+            ( 0, 1):'E',
+            ( 1, 0):'S',
+            ( 0,-1):'W',
+            ( 0, 0):'=',
+            }[rN - rO, cN - cO]
+
+
 def neighbors(loc):
     r, c = loc
     return [(r-1, c  ),

@@ -7,11 +7,14 @@ from hedge import Hedge
 import antmath
 import environment
 #
+import brownian
+import gather
+import foodglom
+#
 import clump
 import defend
 import explore
 import march
-import gather
 
 
 '''
@@ -52,21 +55,19 @@ class Decider(object):
 ###############################################################################
 
 
-def brownian_genmoves(logfn, game):
-    vects = list('NESW=')
-    moves = None # first move set is thrown out
-    while True:
-        env = yield moves
-        moves = {aI:random.choice(vects) for aI in env.myid}
-
-
-###############################################################################
+EXPERTS = (
+##    brownian,
+    gather,
+    foodglom,
+)
 
 
 def meta(logfn, game):
+    vectors = list('NESW=')
 
     # experts (generators)
-    experts = [e(logfn, game) for e in (brownian_gendist, gather.gendist)]
+    experts = [e.genmoves(logfn, game) for e in EXPERTS]
+    enames = [e.__name__ for e in EXPERTS]
     for e in experts:
         e.next() # coroutine warmup
 
@@ -76,136 +77,134 @@ def meta(logfn, game):
     faith = hedge.next()
 
     # loop
-    env = environment.LazyEnvDigest((0, 0), 0, None) # will be thrown out
+    env = environment.LazyEnvDigest((0, 0), 0, None) # for warmup
     while True:
-        logfn and logfn('faith: {}'.format(faith))
 
-        # query each strategy to impose a distribution over all ants
+        for n, f in zip(enames, faith):
+            logfn and logfn('faith: {} \t {}'.format(n, f))
+
+        # query each strategy
         # eg:
-        #   dists = [{1: {'N': 0.50, 'E': 0.50, 'S': 0.00, 'W': 0.00, '=': 0.00},
-        #             2: {'N': 0.00, 'E': 1.00, 'S': 0.00, 'W': 0.00, '=': 0.00} },
-        #            {1: {'N': 1.00, 'E': 0.00, 'S': 0.00, 'W': 0.00, '=': 0.00},
-        #             2: {'N': 0.00, 'E': 0.75, 'S': 0.00, 'W': 0.00, '=': 0.25} } ]
+        #   moves = [{1:'N', 2:'E',        5:'='},
+        #            {1:'N', 2:'S', 4:'S', 5:'W'}]
 
-        movelists = [e.send(env) for e in experts]
-        for i, moves in enumerate(movelists):
-            logfn and logfn('moves: strat{} moves{}'.format(i, moves))
+        moves = [e.send(env) for e in experts]
 
-        assert all(all(ad.viewkeys() ^ set('NESW=') == set() \
-                       for ad in sd.itervalues()) for sd in dists) # all vectors
-        assert all(all(1.0 == fsum(ad.itervalues()) \
-                       for ad in sd.itervalues()) for sd in dists) # sum to 1
+        for n, m in zip(enames, moves):
+            logfn and logfn('moves: {} \t {}'.format(n, m))
 
-        # take the weighted linear combination over distributions
+        # combine the move recommendations into distributions
         # eg:
         #   faith = [0.8, 0.2]
         # result:
-        #   lincomb = {1: {'N': 0.60, 'E': 0.40, 'S': 0.00, 'W': 0.00, '=': 0.00},
-        #              2: {'N': 0.00, 'E': 0.95, 'S': 0.00, 'W': 0.00, '=': 0.05} }
+        #   lincomb = {1: ({'N':1.0, 'E':0.0, 'S':0.0, 'W':0.0, '=':0.0}, {}),
+        #              2: ({'N':0.0, 'E':0.8, 'S':0.2, 'W':0.0, '=':0.0}, {}),
+        #              4: ({'N':0.0, 'E':0.0, 'S':0.2, 'W':0.0, '=':0.0}, {}),
+        #              5: ({'N':0.0, 'E':0.0, 'S':0.0, 'W':0.8, '=':0.2}, {})}
         #
-        # actually, each probability is really a 2-tuple in which the second
-        # part is a dict of "blame tags" which maps strategy indexes to the
-        # strategy probality of the vector
+        # actually, each probability is really a 3-tuple in which the second
+        # part is a generator of the strategy indexes that output that vector
         # eg:
-        #   lincomb = {1: {'N': (0.60, {0: 0.50, 1: 1.00}), ...
+        #   lincomb = {1: {'N':(1.0, [0, 1]), ...
         #
-        # this way we blame strategy 0 half as much as we blame strategy 1 when
-        # moving ant 1 north causes it to die
+        # this way we blame strategy 0 and strategy 1 when moving ant 1 north
+        # causes it to die
+        #
+        # you'll notice in the example that ant 4's entry doesn't sum to one
+        # because strategy 0 didn't recommend anything for it -- this is
+        # compensated for in 'distpick'
+        #
+        # the extra dictionary is where vector entries are put when popped from
+        # the distribution
 
-        lincomb = {aI: {vect: (fsum\
-                               ((f * d[aI][vect]) \
-                                for f, d in it.izip(faith, dists) \
-                                if aI in d),
-                               {i: d[aI][vect] \
-                                for i, d in enumerate(dists) \
-                                if aI in d})
-                        for vect in list('NESW=')} \
+        lincomb = {aI: {vect: (fsum(f for f, m in it.izip(faith, moves) \
+                                    if aI in m and m[aI] == vect),
+                               [i for i, m in enumerate(moves) \
+                                if aI in m and m[aI] == vect]
+                               ) \
+                        for vect in vectors} \
                    for aI in env.myid}
-        for aI, dist in lincomb.iteritems():
-            logfn and logfn('lincomb: ant{} --> {}'.format(aI, sorted([(v, p) for v, (p, b) in dist.iteritems()])))
 
-        # not every dist in lincomb sums to 1 because some ants were left out by
-        # some strategies; this is relevant in 'distpick'
-        #
-        # brownian_gendist always includes all ants, which prevents us from
-        # having to add in those left out by all strategies
+        for aI, mdist in lincomb.iteritems():
+            logfn and logfn('lincomb: ant{} --> {}'.format(aI, mdist))
 
-        assert lincomb.viewkeys() ^ env.myid == set() # all ants
+        # make a probabalistic generator for each ant's decision-vector
+        # get a new environment
 
-        # probabalistically make each ant's decision; keep data for loss
-        # analysis later and generate moves to yield out
-
-        moves = {}
-        decisions = {}
-        for aI, vd in lincomb.iteritems():
-            aN, aO = env.myid[aI]
-            #
-            vector, blame = distpick(vd)
-            decisions[aI] = env.wrap(antmath.displace_loc(vector, aN)), blame
-            moves[aN] = [vector]
-
-        # yield move decisions and get a new environment
-
-        oldf = env.food.copy()
-        logfn and logfn('moves: {}'.format(moves))
-        env = yield moves
-        assert oldf is not env.food
+        oldfood = env.food.copy()
+        env = yield {env.myid[aI][0]: distpicker(vd, logfn) \
+                     for aI, vd in lincomb.iteritems()}
 
         # for each old-ant:
-        #   did it follow the vector we recommended?
-        #     yes-> is it still alive?
-        #             yes-> did the action result in good things?
-        #                     yes-> NO LOSS (0)
-        #                     no--> MINOR LOSS (0, 1)
-        #             no--> MAJOR LOSS (1)
+        #   did any strategy tell the ant to do what it did?
+        #     Tr> is the ant still alive?
+        #           Tr> did the action result in good things?
+        #                 Tr> NO LOSS (0)
+        #                 Fa> MINOR LOSS (0, 1)
+        #           Fa> MAJOR LOSS (1)
 
         loss = [[] for e in experts]
 
-        for aI, (vector, blame) in decisions.iteritems():
+        for aI, vd in lincomb.iteritems():
             alive = aI in env.myid
             aN, aO = env.myid[aI] if alive else env.mydead[aI]
-            obey = decisions[aI][0] == aN
-            if obey:
+            move = antmath.loc_displacement(aO, aN)
+            prob, blame = vd[move] if move in vd else (None, None)
+            logfn('dist: a{} {}'.format(aI, vd))
+            logfn and logfn('loss: a{} alive {} move {} prob {} blame {}'.\
+                            format(aI, alive, move, prob, blame))
+            if prob:
                 # determine loss for this ant
-                als = (0.0 if goodmove(oldf, env, aN, logfn) else 0.1) \
+                als = (0.0 if tookfood(oldfood, env, aN) else 0.1) \
                       if alive else 1.0
                 for i in blame:
                     loss[i].append(als)
-##                # assign loss to each strategy (scaled by probability)
-##                for i, prob in blame.iteritems():
-##                    loss[i].append(prob * als)
 
-        logfn and logfn('loss: {}'.format(loss))
+        for n, l in zip(enames, loss):
+            logfn and logfn('loss: {} \t {}'.format(n, l))
 
-        # condense loss down to one value (divided by old ant-count) and apply to hedge
+        # condense loss down to one value and apply to hedge (div by antcount)
 
-        faith = hedge.send([fsum(l) / len(decisions) if decisions else 0.0 \
+        faith = hedge.send([fsum(l) / len(lincomb) if lincomb else 0.0 \
                             for l in loss])
 
 
-def goodmove(oldfood, env, aloc, logfn):
+def tookfood(oldfood, env, aloc):
     '''Did any locations neighboring the ant contain food last turn?'''
-    logfn('goodmove {} {}'.format(
-        aloc, [loc in oldfood for loc in env.wrapiter(env.tonari(aloc))]))
     return any(loc in oldfood for loc in env.wrapiter(env.tonari(aloc)))
 
 
-def distpick(distblame):
-    '''Randomly pick a key from distblame according to the probabilities.
+def distpicker(dist, logfn):
+    '''Generate keys from dist according to their probabilities.
+    dist is a [vect --> (prob, blame)]
 
-    Also return the blame dictionary for that vector.
+    Stop after yielding all keys with probablitity greater than zero.
+
     '''
-    _, cdf = reduce(lambda (pdf, cdf), (vect, (prob, _)): \
-                    (pdf + [prob], cdf + [(vect, fsum(pdf + [prob]))]),
-                    distblame.iteritems(),
-                    ([], []))
-    assert round(cdf[-1][1], 6) <= 1.0 # sum to at most 1
-
-    # lazily fix distributions which sum to less than 1
-    pick = cdf[-1][1] * random.random()
-
-    # find first prob in cdf which is strictly greater than than 'pick'
-    vector = reduce(lambda acc, (vect, cprob): \
-                    (vect, cprob) if cprob > pick and not acc else acc,
-                    cdf, False)[0]
-    return vector, distblame[vector][1]
+    def distpick(d):
+        '''Return a key from d according to its probability.
+        d is a [vect --> prob]
+        return a 2-tuple (vect, prob)
+        '''
+        logfn('distpick: d {}'.format(d))
+        # produce cdf
+        _, cdf = reduce(lambda (pdf, cdf), (vect, prob): \
+                        (pdf + [prob], cdf + [(vect, fsum(pdf + [prob]))]),
+                        dist.iteritems(),
+                        ([], []))
+        logfn('distpick: cdf {}'.format(cdf))
+        # produce a scaled random picker
+        pick = cdf[-1][1] * random.random()
+        # return vect of first prob in cdf which is greater than picker
+        return reduce(lambda acc, (vect, cprob): \
+                      (vect, cprob) if cprob > pick and not acc else acc,
+                      cdf,
+                      False)
+    ### INNER ###
+    # strip blame; filter zero probabilities
+    dist = {v: p for v, (p, _) in dist.iteritems() if p}
+    assert round(fsum(dist.viewvalues()), 6) <= 1.0 # sum to at most 1.000000
+    while dist:
+        vect, prob = distpick(dist)
+        yield vect
+        dist.pop(vect)

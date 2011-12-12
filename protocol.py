@@ -3,6 +3,7 @@ from datetime import datetime as DateTime
 from math import sqrt as math_sqrt
 from random import seed as random_seed
 from collections import defaultdict as collections_defaultdict
+from itertools import repeat as itertools_repeat
 # local
 import antmath
 
@@ -115,6 +116,7 @@ class Bot(object):
     def presense(self, msg, num):
         self.timer = DateTime.now()
         self.turn = num
+        self.logfn and self.logfn('\n')
         self.logfn and self.logfn('TURN #{} presense'.format(num))
         self.food.clear()
         self.enemyhill.clear()
@@ -188,7 +190,7 @@ class Bot(object):
             aN, (aO, aI, aD, aV) = plan
             todict[aN] = aI, aO
             if self.logfn:
-                if aN == aO:
+                if aN == aO and aD != '=':
                     self.logfn('Ant #{} at {} -FAIL{}-> {}{}'.\
                                format(aI, aO, aD, aN, ' ' + msg))
                 else:
@@ -244,21 +246,24 @@ class Bot(object):
         decidertime = (DateTime.now() - decidertime).total_seconds()
         #
         # filter moves to only ants that actually exist
-        # append 'stay' to the end of every move vector
-        moves = {loc:vectors + ['='] for loc, vectors in moves.iteritems() \
+        moves = {loc:vectors for loc, vectors in moves.iteritems() \
                  if loc in self.myant}
         #
         # add a 'stay' order for each ant that was left-out
         # copy ant ids from myant to moves
         for loc, (antid, oldloc) in self.myant.iteritems():
             if loc not in moves:
-                moves[loc] = ['=']
+                moves[loc] = itertools_repeat('=')
+            elif type(moves[loc]) == type([]):
+                moves[loc] = (v for v in moves[loc])
             moves[loc] = (antid, moves[loc])
         #
-        # define a function to get the next valid vector in a list
-        # pop is okay b/c vector lists end with '=' (which locations prefer)
+        # define a function to get the next valid vector from a generator
         def poporder(oldloc, vectors):
-            vector = vectors.pop(0)
+            try:
+                vector = vectors.next()
+            except StopIteration:
+                vector = '='
             newloc = self.wrap(antmath.displace_loc(vector, oldloc))
             return (newloc, vector) \
                    if newloc not in self.water and newloc not in self.food \

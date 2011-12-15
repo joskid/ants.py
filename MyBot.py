@@ -9,8 +9,11 @@ import decider
 def genlogger(fn):
     LOG = open(fn, mode='wb')
     sys.stderr = LOG
-    def f(s):
-        LOG.write('{} {}\n'.format(datetime.datetime.now(), s))
+    def f(s, noprefix=False):
+        if noprefix:
+            LOG.write('{}\n'.format(s))
+        else:
+            LOG.write('{} {}\n'.format(datetime.datetime.now(), s))
         LOG.flush()
     return f
 
@@ -45,7 +48,6 @@ def main():
         decname, decclass = decider.DEFAULT
     #
     # logger option
-    sys.argv.append(LOGOPT)
     if LOGOPT in sys.argv:
         sys.argv.remove(LOGOPT)
         logger = genlogger('log-'+decname+'.log')
@@ -58,8 +60,8 @@ def main():
     # main loop
     while True:
         heard = listen()
-        if heard == 'turn 100':
-            return
+##        if heard == 'turn 200':
+##            return
         replies = bot.handle(heard)
         if replies:
             tell('\n'.join(replies))

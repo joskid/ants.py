@@ -13,10 +13,36 @@ def nearest_unwrapped_loc(origin, size, target):
     Return the squared distance and the location as a tuple.
 
     '''
-    h, w = size
-    r, c = target
-    options = [target, (r-h, c), (r+h, c), (r, c-w), (r, c+w)]
-    return min((distance2(origin, t), t) for t in options)
+    memo = nearest_unwrapped_loc.memo
+    try:
+        return memo[origin, target]
+    except KeyError:
+        h, w = size
+        r, c = target
+        options = [target, (r-h, c), (r+h, c), (r, c-w), (r, c+w)]
+        memo[origin, target] = min((distance2(origin, t), t) for t in options)
+        return memo[origin, target]
+nearest_unwrapped_loc.memo = {}
+
+
+##def nearest_unwrapped_loc(origin, size, target):
+##    oR, oC = origin
+##    h, w = size
+##    hh, hw = h * 0.5, w * 0.5
+##    tR, tC = target
+##    if abs(oR - tR) > hh:
+##        tR += h * cmp(oR, tR)
+##    if abs(oC - tC) > hw:
+##        tC += w * cmp(oC, tC)
+##    ans = distance2(origin, (tR, tC)), (tR, tC)
+####    old = nearest_unwrapped_locOLD(origin, size, target)
+####    if old[0] != ans[0]:
+####        import os
+####        os.write(2, 'FOO unwrap o {} s {} t{}\n'.format(origin, size, target))
+####        os.write(2, 'FOO new {}\n'.format(ans))
+####        os.write(2, 'FOO old {}\n'.format(old))
+##    return ans
+    
 
 
 def wrap_loc(loc, size):
@@ -38,12 +64,25 @@ def displace_loc(direction, location):
 def loc_displacement(oldloc, newloc):
     rO, cO = oldloc
     rN, cN = newloc
+    sign = cmp
     return {(-1, 0):'N',
             ( 0, 1):'E',
             ( 1, 0):'S',
             ( 0,-1):'W',
             ( 0, 0):'=',
-            }[rN - rO, cN - cO]
+            }[sign(rN, rO),
+              sign(cN, cO)]
+
+
+##def loc_displacement(oldloc, newloc):
+##    rO, cO = oldloc
+##    rN, cN = newloc
+##    return {(-1, 0):'N',
+##            ( 0, 1):'E',
+##            ( 1, 0):'S',
+##            ( 0,-1):'W',
+##            ( 0, 0):'=',
+##            }[, cN - cO]
 
 
 def neighbors(loc):
@@ -54,12 +93,21 @@ def neighbors(loc):
             (r  , c-1)]
 
 
+def eightsquare(loc):
+    r, c = loc
+    return [(r-1, c  ), (r-1, c+1),
+            (r  , c+1), (r+1, c+1),
+            (r+1, c  ), (r+1, c-1),
+            (r  , c-1), (r-1, c-1)]
+
+
 def reverse_dir(direction):
     '''What is the opposite NESW direction?'''
     return {'N':'S',
             'E':'W',
             'S':'N',
-            'W':'E'}[direction]
+            'W':'E',
+            '=':'='}[direction]
 
 
 def naive_dir(origin, target):
@@ -68,8 +116,10 @@ def naive_dir(origin, target):
     br, bc = target
     deltar = br - ar
     deltac = bc - ac
-    r = 'N' if deltar < 0 else 'S'
-    c = 'W' if deltac < 0 else 'E'
+    r = {-1:'N', 0:'=', 1:'S'}[cmp(br, ar)]
+    c = {-1:'W', 0:'=', 1:'E'}[cmp(bc, ac)]
+    r = c if r == '=' else r
+    c = r if c == '=' else c
     return [r, c] if deltar ** 2 > deltac ** 2 else [c, r]
 
 

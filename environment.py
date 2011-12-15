@@ -1,5 +1,9 @@
+# stdlib
+import datetime
+import random
+import itertools
 # local
-import antmath
+import antmath as am
 
 
 '''
@@ -44,6 +48,10 @@ class LazyEnvDigest(object):
         self.size = size
         self.rad = radius
         self.rad2 = radius ** 2
+        self.nneR = set(xrange(int(round(self.rad)),
+                               int(round(self.size[0] - self.rad))))
+        self.nneC = set(xrange(int(round(self.rad)),
+                               int(round(self.size[1] - self.rad))))
         # environment data
         self.env = {            # wLoc --> metadata
             'water'     :{},
@@ -54,6 +62,7 @@ class LazyEnvDigest(object):
             'myant'     :{},
             'mydead'    :{},
         }
+        self.rays = {}          # wLoc, wLoc --> bool
         self.envwater = set()
         self.__myid = None      # id --> wLoc, old_wLoc
         self.__mydeadid = None  # id --> wLoc, old_wLoc
@@ -67,14 +76,52 @@ class LazyEnvDigest(object):
             'myant'     :{},
             'mydead'    :{},
         }
-        # curried functions
-        self.wrap = lambda loc: antmath.wrap_loc(loc, self.size)
-        self.allinradius = lambda loc: antmath.allinradius(self.rad, loc)
-        # shortened functions
-        self.dist2 = lambda a, b: antmath.distance2(a, b)
-        self.tonari = lambda loc: antmath.neighbors(loc)
-        # utility functions
-        self.wrapiter = lambda seq: (self.wrap(loc) for loc in seq)
+        self.supplemental = {}  # moves to supplement partial strategies
+
+    #
+    # curried
+
+    def wrap(self, loc):
+        return am.wrap_loc(loc, self.size)
+
+    def unwrap(self, a, b):
+        if self.not_near_edge(a):
+            return b
+        else:
+            d2, unwr = am.nearest_unwrapped_loc(a, self.size, b)
+            return unwr
+
+    def allinradius(self, loc):
+        return am.allinradius(self.rad, loc)
+
+    #
+    # shortened
+
+    @staticmethod
+    def dist2(a, b):
+        return am.distance2(a, b)
+
+    @staticmethod
+    def tonari(loc):
+        return am.neighbors(loc)
+
+    #
+    # utility
+
+    def wrapiter(self, seq):
+        return (self.wrap(loc) for loc in seq)
+
+    def not_near_edge(self, loc):
+        r, c = loc
+        return r in self.nneR and c in self.nneC
+
+    @staticmethod
+    def int(loc):
+        r, c = loc
+        return int(r), int(c)
+
+    #
+    # api
 
     def update_env(self,
                    water, food, enemyhill, enemyant, myhill, myant, mydead):
@@ -94,6 +141,7 @@ class LazyEnvDigest(object):
         # ant perspective data
         for apm in self.persp.itervalues():
             apm.clear()
+        self.supplemental.clear()
 
     @property
     def water(self):
@@ -137,68 +185,108 @@ class LazyEnvDigest(object):
                 aI: (aN, aO) for aN, (aI, aO) in self.mydead.iteritems()}
         return self.__mydeadid
 
-##    def bfsdigest(self, key, aloc):
-##        '''Expensive. Digest an ant's environment for objective reachability.
-##        str wLoc --> list<Goals>
-##        '''
-##        apm = self.persp[key] # wLoc --> [wLoc --> (bool, list<Goal>)]
-##
-##        self.digest(key, aloc)
-##
-##        bfs, ap = apm[aloc]
-##        if not bfs:
-##            fringe = [(aloc, 0.0)]
-##            bfs = set()
-##            apl[aloc] = []
-##            while fringe:
-##                loc, dist2 = fringe.pop(0)
-##                bfs.add(loc)
-##                if self.wrap(loc) in self.env[key]:
-##                    apl[aloc].append((dist2, loc))
-##                fringe.extend(
-##                    (n, self.dist2(aloc, n)) \
-##                    for n in self.tonari(loc) \
-##                    if n not in bfs and self.wrap(n) not in self.envwater \
-##                    and self.dist2(aloc, n) <= self.rad2
-##                )
-##            apl[aloc].sort()
-##            # mark it with "true"
-##
-##        # a bfs-map is present
-##        return apm[aloc][1]
-##
-##
-####            apm[aloc] = sorted(
-####                (dist2, gloc) \
-####                for gloc, dist2 in 
-######                for gloc, dist2 in self.perspdirt[aloc].iteritems() \
-####                if self.wrap(gloc) in self.env[key])
-##        return apl[aloc]
-##        pass
-
     def digest(self, key, aloc):
-        '''Digest an ant's environment for objective presence.
+        '''Digest an ant's environment for object presence.
         str wLoc --> list<Goals>
         '''
+        aloc = self.wrap(aloc)
         apm = self.persp[key] # wLoc --> (bool, list<Goal>)
         if aloc not in apm:
-            apm[aloc] = False, sorted((self.dist2(aloc, gloc), gloc) \
-                                      for gloc in self.env[key] \
-                                      if self.dist2(aloc, gloc) <= self.rad2)
+            goals = [] # list<Goal>
+            apm[aloc] = False, goals
+            for gloc in self.env[key]:
+                #gloc = self.unwrap(aloc, gloc)
+                d2 = self.dist2(aloc, gloc)
+                if d2 <= self.rad2:
+                    goals.append((d2, gloc))
+            if key == 'myant' and goals and aloc == goals[0][1]:
+                goals.pop(0)
+            goals.sort()
         return apm[aloc][1]
 
-##    def __reachable_dirt(self, aloc):
-##        '''Create a persistent view of reachable dirt within the radius.'''
-##        self.perspdirt[aloc] = bfs = {}
-##        fringe = [(aloc, 0.0)]
-##        while fringe:
-##            loc, dist2 = fringe.pop(0)
-##            bfs[loc] = dist2
-##            fringe.extend(
-##                (n, self.dist2(aloc, n)) for n in self.tonari(loc) \
-##                if self.wrap(n) in self.envdirt \
-##                and n not in bfs \
-##                and self.dist2(aloc, n) <= self.rad2
-##            )
-##        self.logfn and self.logfn(
-##            'reachable dirt {} len {}'.format(aloc, len(bfs)))
+##    def ray(self, origin, target):
+##        '''Is there a direct path from the origin to the target?'''
+##        origin = self.wrap(self.int(origin))
+##        target = self.unwrap(origin, self.int(target))
+##        try:
+##            # return a stored answer
+##            return self.rays[origin, target]
+##        except KeyError:
+##            if self.dist2(origin, target) > self.rad2:
+##                # don't check long paths
+##                self.rays[origin, target] = None
+##            else:
+##                # check path
+##                ... = self.__ray(origin, target, set())
+##        return self.rays[origin, target]
+##
+##
+##
+##        # remember the result
+##        for co, ct in itertools.izip(o[:-1], t[:-1]):
+##            self.rays[co, ct] = result
+##
+##        return self.rays[origin, target]
+##
+##    def __ray(self, origin, target):
+##        origin = self.wrap(origin)
+##        target = self.unwrap(origin, target)
+##        if origin == target:
+##            return []
+##        else:
+##            v1, v2 = am.naive_dir(origin, target)
+##            n1 = self.wrap(am.displace_loc(v1, origin))
+##            n2 = self.wrap(am.displace_loc(v2, origin))
+##            if n1 not in self.water:                
+##            elif n2
+
+    def ray(self, origin, target):
+        '''Is there a direct path from the origin to the target?'''
+        origin = self.wrap(self.int(origin))
+        target = self.unwrap(origin, self.int(target))
+
+        # return a stored answer
+        try:
+            return self.rays[origin, target]
+        except KeyError:
+            pass
+
+        # trivial
+        if origin == target:
+            return True
+
+        # don't check long paths
+        if self.dist2(origin, target) > self.rad2:
+            return False
+
+        # check path
+        o = [origin]
+        t = [target]
+##        while :
+        for _ in xrange(150):
+            v, _ = am.naive_dir(o[-1], t[-1])
+            o.append(self.wrap(am.displace_loc(v, o[-1])))
+            t.append(self.unwrap(o[-1], t[-1]))
+            if o[-1] == t[-1]:
+                break
+
+        # did the path pass through water?
+        if self.water.viewkeys() & o:
+            return False
+
+        # remember the result
+        for co, ct in itertools.izip(o[:-1], t[:-1]):
+            self.rays[co, ct] = True
+
+        return self.rays[origin, target]
+
+##    def supplement(self, moves):
+##        if not self.supplemental:
+##            for aI, (aN, aO) in self.myid.iteritems():
+##                self.supplemental[aI] = '='#random.choice('NESW')
+##        m = self.supplemental.copy()
+##        m.update(moves)
+##        return m
+  
+    def supplement(self, moves):
+        return moves

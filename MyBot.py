@@ -28,7 +28,7 @@ def tell(s):
     sys.stdout.flush()
 
 
-def main():
+def main(deciderprgm=None):
     DECOPT = '--decider'
     LOGOPT = '--log'
     #
@@ -46,6 +46,10 @@ def main():
             raise ValueError('{} invalid argument "{}"'.format(DECOPT, decname))
     else:
         decname, decclass = decider.DEFAULT
+    #
+    # decider argument (overrides command-line option)
+    if deciderprgm is not None:
+        decname, decclass = deciderprgm, decider.DECIDERS[deciderprgm]
     #
     # logger option
     if LOGOPT in sys.argv:

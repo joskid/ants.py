@@ -1,12 +1,10 @@
 game_logs
 tools
-other
 *.pyc
 *.sh
 *.zip
 *.log
-log.*
 *.bat
 *.profile
 *.png
-skill-graph-of-submissions
+*.gz

@@ -61,16 +61,16 @@ class Decider(object):
 
 
 EXPERTS = (
-#    betterexplore,
+    betterexplore, # not in comp #7
     brownian,
     clump,
     defend,
     explore,
     foodcalling,
-#    glomfood,
+    glomfood, # not in comp #7
     glomhill,
     keepdistance,
-#    mob,
+    mob, # not in comp #7
     movein,
     stayoffhill,
     unstuck,
@@ -110,7 +110,7 @@ def meta(logfn, game):
             env.food.clear()
         moves = [e.send(env) for e in experts]
 
-##        assert all(env.myid - m.viewkeys() == set() for m in moves)
+#        assert all(env.myid - m.viewkeys() == set() for m in moves)
 
         # combine the move recommendations into distributions
         # eg:

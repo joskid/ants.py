@@ -320,6 +320,6 @@ class Bot(object):
 
     def wrap(self, loc):
         '''Finds the true on-map coordinates of an unwrapped location.'''
-        return loc[0] % self.game['rows'], loc[1] % self.game['cols']
+        return antmath.wrap_loc(loc, (self.game['rows'], self.game['cols']))
 
 ###############################################################################

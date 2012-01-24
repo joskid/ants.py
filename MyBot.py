@@ -64,8 +64,6 @@ def main(deciderprgm=None):
     # main loop
     while True:
         heard = listen()
-##        if heard == 'turn 200':
-##            return
         replies = bot.handle(heard)
         if replies:
             tell('\n'.join(replies))

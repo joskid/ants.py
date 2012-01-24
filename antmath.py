@@ -12,6 +12,9 @@ def nearest_unwrapped_loc(origin, size, target):
 
     Return the squared distance and the location as a tuple.
 
+    Memoizes answers for a given origin and target location; size is assumed
+    not to change during the course of a game.
+
     '''
     memo = nearest_unwrapped_loc.memo
     try:
@@ -25,26 +28,6 @@ def nearest_unwrapped_loc(origin, size, target):
 nearest_unwrapped_loc.memo = {}
 
 
-##def nearest_unwrapped_loc(origin, size, target):
-##    oR, oC = origin
-##    h, w = size
-##    hh, hw = h * 0.5, w * 0.5
-##    tR, tC = target
-##    if abs(oR - tR) > hh:
-##        tR += h * cmp(oR, tR)
-##    if abs(oC - tC) > hw:
-##        tC += w * cmp(oC, tC)
-##    ans = distance2(origin, (tR, tC)), (tR, tC)
-####    old = nearest_unwrapped_locOLD(origin, size, target)
-####    if old[0] != ans[0]:
-####        import os
-####        os.write(2, 'FOO unwrap o {} s {} t{}\n'.format(origin, size, target))
-####        os.write(2, 'FOO new {}\n'.format(ans))
-####        os.write(2, 'FOO old {}\n'.format(old))
-##    return ans
-    
-
-
 def wrap_loc(loc, size):
     '''Finds the true on-map coordinates of an unwrapped location.'''
     row, col = loc
@@ -53,6 +36,7 @@ def wrap_loc(loc, size):
 
 
 def displace_loc(direction, location):
+    '''Give the new location after displacing in the given direction.'''
     return {'N': lambda loc: (loc[0] - 1, loc[1]    ),
             'E': lambda loc: (loc[0]    , loc[1] + 1),
             'S': lambda loc: (loc[0] + 1, loc[1]    ),
@@ -62,6 +46,12 @@ def displace_loc(direction, location):
 
 
 def loc_displacement(oldloc, newloc):
+    '''Tell in what direction the displacement from old to new occurred.
+
+    oldloc and newloc do not have to be adjacent, but they must be on either
+    the same row or column.
+
+    '''
     rO, cO = oldloc
     rN, cN = newloc
     sign = cmp
@@ -74,18 +64,8 @@ def loc_displacement(oldloc, newloc):
               sign(cN, cO)]
 
 
-##def loc_displacement(oldloc, newloc):
-##    rO, cO = oldloc
-##    rN, cN = newloc
-##    return {(-1, 0):'N',
-##            ( 0, 1):'E',
-##            ( 1, 0):'S',
-##            ( 0,-1):'W',
-##            ( 0, 0):'=',
-##            }[, cN - cO]
-
-
 def neighbors(loc):
+    '''Return the list of immediate neighbors to the given location.'''
     r, c = loc
     return [(r-1, c  ),
             (r  , c+1),
@@ -94,6 +74,7 @@ def neighbors(loc):
 
 
 def eightsquare(loc):
+    '''Return the list of all eight squares surrounding the given location.'''
     r, c = loc
     return [(r-1, c  ), (r-1, c+1),
             (r  , c+1), (r+1, c+1),
@@ -111,7 +92,17 @@ def reverse_dir(direction):
 
 
 def naive_dir(origin, target):
-    '''Which two NESW directions orient origin toward target?'''
+    '''Which two NESW directions orient origin toward target?
+    
+    Returns the directions in order of directness.
+    EG. ['N', 'E'] indicates that target is more north than east of origin,
+        while ['E', 'N'] indicates it is more east than north.
+    
+    Returns a list of same vectors when the target is on the same row or
+    column as the origin.
+    EG: ['N', 'N'] indicates that the target is due north from origin.
+    
+    '''
     ar, ac = origin
     br, bc = target
     deltar = br - ar
@@ -121,11 +112,6 @@ def naive_dir(origin, target):
     r = c if r == '=' else r
     c = r if c == '=' else c
     return [r, c] if deltar ** 2 > deltac ** 2 else [c, r]
-
-
-##def nearest(a, others, dist):
-##    '''Return the object in others nearest to loc a, given a distance func.'''
-##    return reduce(lambda acc,x: x if dist(a,x) < dist(a,acc) else acc, others)
 
 
 def distance2(a, b):

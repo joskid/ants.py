@@ -7,7 +7,9 @@ import antmath as am
 
 
 '''
-Contain the environment dictionaries. Digest ant perspectives lazilly. Rock.
+Contain the environment dictionaries.
+Digest ant perspectives lazilly.
+Rock.
 
 A Size is a tuple:
 -- integer - height
@@ -204,42 +206,6 @@ class LazyEnvDigest(object):
             goals.sort()
         return apm[aloc][1]
 
-##    def ray(self, origin, target):
-##        '''Is there a direct path from the origin to the target?'''
-##        origin = self.wrap(self.int(origin))
-##        target = self.unwrap(origin, self.int(target))
-##        try:
-##            # return a stored answer
-##            return self.rays[origin, target]
-##        except KeyError:
-##            if self.dist2(origin, target) > self.rad2:
-##                # don't check long paths
-##                self.rays[origin, target] = None
-##            else:
-##                # check path
-##                ... = self.__ray(origin, target, set())
-##        return self.rays[origin, target]
-##
-##
-##
-##        # remember the result
-##        for co, ct in itertools.izip(o[:-1], t[:-1]):
-##            self.rays[co, ct] = result
-##
-##        return self.rays[origin, target]
-##
-##    def __ray(self, origin, target):
-##        origin = self.wrap(origin)
-##        target = self.unwrap(origin, target)
-##        if origin == target:
-##            return []
-##        else:
-##            v1, v2 = am.naive_dir(origin, target)
-##            n1 = self.wrap(am.displace_loc(v1, origin))
-##            n2 = self.wrap(am.displace_loc(v2, origin))
-##            if n1 not in self.water:                
-##            elif n2
-
     def ray(self, origin, target):
         '''Is there a direct path from the origin to the target?'''
         origin = self.wrap(self.int(origin))
@@ -262,7 +228,8 @@ class LazyEnvDigest(object):
         # check path
         o = [origin]
         t = [target]
-##        while :
+        # this loop has a bug and sometimes ran forever as a while loop
+        # changed it to a for loop because the contest end was near!
         for _ in xrange(150):
             v, _ = am.naive_dir(o[-1], t[-1])
             o.append(self.wrap(am.displace_loc(v, o[-1])))
@@ -281,6 +248,7 @@ class LazyEnvDigest(object):
         return self.rays[origin, target]
 
 ##    def supplement(self, moves):
+##        '''Supplement an ant's orders with a random or fixed vector.'''
 ##        if not self.supplemental:
 ##            for aI, (aN, aO) in self.myid.iteritems():
 ##                self.supplemental[aI] = '='#random.choice('NESW')
@@ -289,4 +257,11 @@ class LazyEnvDigest(object):
 ##        return m
   
     def supplement(self, moves):
+        '''Do not supplement an ant's orders.'''
         return moves
+
+# Note: The commented and uncommented versions of 'supplement' were used to
+#       study the behavior of Hedgebot by forcing it to work in conditions which
+#       more correctly matched the assumptions of the hedge algorithm.
+# See: https://docs.google.com/document/d/1MB0IAFvgE2BEx4_PUJ1wvHeEERwt_C9YSU4E4FY2gHA/edit
+

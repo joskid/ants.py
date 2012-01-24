@@ -38,9 +38,9 @@ class Decider(object):
     def think(self, dirt, food, enemyhill, enemyant, myhill, myant, mydead):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
         d = Decider.distance2
-##        if self.logfn:
-##            self.logfn('\n' + self._make_map(
-##                dirt, food, enemyhill, enemyant, myhill, myant, mydead))
+        #if self.logfn:
+        #    self.logfn('\n' + self._make_map(
+        #        dirt, food, enemyhill, enemyant, myhill, myant, mydead))
         goals = {}
         goals.update(food)
         goals.update(enemyant)
@@ -71,8 +71,8 @@ class Decider(object):
                     # move randomly
                     random.shuffle(self.d)
                     myant[aN] = self.d[:]
-##                self.logfn('#{} to {} for goal {}'.format(
-##                    ant, myant[loc], self.ant[ant] if ant in self.ant else 'explore'))
+                #self.logfn('#{} to {} for goal {}'.format(
+                #    ant, myant[loc], self.ant[ant] if ant in self.ant else 'explore'))
         return myant
 
     def extend(self, vectors):

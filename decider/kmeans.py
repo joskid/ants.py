@@ -49,13 +49,6 @@ class Decider(object):
 
     def think(self, dirt, food, enemyhill, enemyant, myhill, myant, mydead):
         '''Return a dict with the keys of myant mapped to lists of NESW=.'''
-
-
-        #if self.logfn:
-        #    self.logfn('\n' + self._make_map(
-        #        dirt, food, enemyhill, enemyant, myhill, myant, mydead))
-
-
         # build a list of goals
         goaltime = DateTime.now()
         # active goals
@@ -191,29 +184,3 @@ class Decider(object):
     def wrap(self, loc):
         '''Finds the true on-map coordinates of an unwrapped location.'''
         return loc[0] % self.g['rows'], loc[1] % self.g['cols']
-
-    def _make_map(self, dirt, food, enemyhill, enemyant, myhill, myant,
-                   mydead):
-        # determine what is currently visible
-        m = {}
-        for antloc in myant:
-            for _, (r, c) in antmath.allinradius(self.g['viewradius'], antloc):
-                r %= self.g['rows']
-                c %= self.g['cols']
-                m[r, c] = '.'
-        m.update({loc:'*' for loc in food})
-        m.update({loc:chr(65 + num) for loc, num in enemyhill.iteritems()})
-        m.update({loc:chr(97 + num) for loc, num in enemyant.iteritems()})
-        m.update({loc:'0' for loc in myhill})
-        m.update({loc:str(num) + '!' for loc, num in mydead.iteritems()})
-        m.update({loc:str(num) + '@' for loc, (num, oldloc) in myant.iteritems()})
-        # make a big string
-        s = []
-        for r in xrange(self.g['rows']):
-            s.append([])
-            for c in xrange(self.g['cols']):
-                s[-1].append('|' if (r, c) in dirt else '#')
-                if (r, c) in m:
-                    s[-1][-1] = m[r, c]
-            s[-1] = 'MAP:' + ''.join(s[-1])
-        return '\n'.join(s)

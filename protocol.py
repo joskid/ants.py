@@ -8,12 +8,19 @@ from itertools import repeat as itertools_repeat
 import antmath
 
 
-# ant property identifier suffixes:
-#   O=oldloc
-#   N=newloc
-#   I=identity
-#   V=vectorlist
-#   D=vector(direction)
+'''
+Implements a protocol handler for the 2011 Google AI Challenge "ants" game.
+
+Provides a high level interface for ant bots to be developed quickly.
+
+Ant property identifier suffixes:
+    O=oldloc
+    N=newloc
+    I=identity
+    V=vectorlist
+    D=vector(direction)
+
+'''
 
 
 ###############################################################################
@@ -23,7 +30,7 @@ class Bot(object):
 
     def __init__(self, decider, logfn=None):
         '''Takes a Decider instance which makes decisions about the game.
-        Optionally takes a function to logs strings.
+        Optionally takes a function to log strings.
 
         The Decider must have the following methods:
 
@@ -95,7 +102,8 @@ class Bot(object):
         self.myhill     = {} # map loc --> True
         self.myant      = {} # map loc --> int, loc (id, oldloc)
         self.mydead     = {} # map loc --> int, loc (id, oldloc)
-        self.antplans   = {} # map loc (new) --> loc, int, str, list<str> (old, id, vector, vectors)
+        self.antplans   = {} # map loc (new) --> loc, int, str, list<str>
+        #                                        (old, id, vector, vectors)
 
     def handle(self, s):
         args = s.split()
@@ -108,8 +116,6 @@ class Bot(object):
     def handle_radius(self, msg, val):
         self.game[msg] = int(val)
         self.game[msg[:-1]] = math_sqrt(int(val))
-##        self.logfn('{} is {}'.format(msg, self.game[msg]))
-##        self.logfn('{} is {}'.format(msg[:-1], self.game[msg[:-1]]))
 
     def pregame(self):
         random_seed(self.game['player_seed'])
@@ -118,17 +124,16 @@ class Bot(object):
     def presense(self, msg, num):
         self.timer = DateTime.now()
         self.turn = num
-##        self.logfn and self.logfn('\n')
-##        self.logfn and self.logfn('TURN #{} presense'.format(num))
+        self.logfn and self.logfn('TURN #{} presense'.format(num))
         self.food.clear()
         self.enemyhill.clear()
         self.enemyant.clear()
         self.myhill.clear()
         self.myant.clear()
         self.mydead.clear()
-##        if self.logfn:
-##            for k, v in self.antplans.iteritems():
-##                self.logfn('plan {} <-- {}'.format(k, v))
+        if self.logfn:
+            for k, v in self.antplans.iteritems():
+                self.logfn('plan {} <-- {}'.format(k, v))
 
     def sense_water(self, loc):
         self.water[loc] = True
@@ -170,16 +175,16 @@ class Bot(object):
 
         '''
         fail = [f for f in antmath.neighbors(loc) \
-                if self.wrap(f) in self.antplans and self.antplans[f][0] == loc]
+                if (self.wrap(f) in self.antplans and
+                    self.antplans[f][0] == loc)]
         if fail:
-##            assert len(fail) == 1
             return fail[0], self.antplans.pop(fail[0])
         # unrecognized
         return None, 4 * (None,)
 
     @staticmethod
     def recognize(recognizer, sensor, fromdict, todict):
-        '''sense the ants in fromdict that the recognizer finds'''
+        '''Sense the ants in fromdict that the recognizer finds.'''
         for loc in fromdict.keys():
             plan = recognizer(loc)
             if plan[0]:
@@ -191,48 +196,53 @@ class Bot(object):
         def fn(todict, plan):
             aN, (aO, aI, aD, aV) = plan
             todict[aN] = aI, aO
-##            if self.logfn:
-##                if aN == aO and aD != '=':
-##                    self.logfn('Ant #{} at {} -FAIL{}-> {}{}'.\
-##                               format(aI, aO, aD, aN, ' ' + msg))
-##                else:
-##                    self.logfn('Ant #{} at {} -{}-> {}{}'.\
-##                               format(aI, aO, aD, aN, ' ' + msg))
+            if self.logfn:
+                if aN == aO and aD != '=':
+                    self.logfn('Ant #{} at {} -FAIL{}-> {}{}'.\
+                               format(aI, aO, aD, aN, ' ' + msg))
+                else:
+                    self.logfn('Ant #{} at {} -{}-> {}{}'.\
+                               format(aI, aO, aD, aN, ' ' + msg))
         return fn
 
     def postsense(self):
-##        self.logfn and self.logfn('TURN #{} postsense '.format(self.turn))
+        self.logfn and self.logfn('TURN #{} postsense '.format(self.turn))
         #
         # recognize our dead ants
         mydead = {}
-        self.recognize(self.recognize_moved, self.gen_sensor('and died'), self.mydead, mydead)
-        self.recognize(self.recognize_stuck, self.gen_sensor('and died'), self.mydead, mydead)
-##        assert self.mydead == {} # all were recognized
+        self.recognize(self.recognize_moved, self.gen_sensor('and died'),
+                       self.mydead, mydead)
+        self.recognize(self.recognize_stuck, self.gen_sensor('and died'),
+                       self.mydead, mydead)
+        #assert self.mydead == {} # all were recognized
         self.mydead = mydead
         del mydead # don't use the local ref
         #
         # recognize our living ants
         myant = {}
-        self.recognize(self.recognize_moved, self.gen_sensor(), self.myant, myant)
-        self.recognize(self.recognize_stuck, self.gen_sensor(), self.myant, myant)
+        self.recognize(self.recognize_moved, self.gen_sensor(), self.myant,
+                       myant)
+        self.recognize(self.recognize_stuck, self.gen_sensor(), self.myant,
+                       myant)
+        # still unrecognized ants must have just been born
         for loc in self.myant.keys():
-##            assert loc in self.myhill # ants must be born on an anthill
+            #assert loc in self.myhill # ants must be born on an anthill
             del self.myant[loc]
             aI = self.anttotal
             self.anttotal += 1
             myant[loc] = aI, loc
-##            self.logfn and self.logfn('Ant #{} at {} just born'.format(aI, loc))
-##        assert self.myant == {} # all were recognized
+            self.logfn and self.logfn('Ant #{} at {} born'.format(aI, loc))
+        #assert self.myant == {} # all were recognized
         self.myant = myant
         del myant # don't use the local ref
         #
         # all living and dead ants are recognized
-##        assert self.antplans == {}
+        #assert self.antplans == {}
         #
         # combine the original hill list with the current hill list
         hills = {}
         hills.update(self.myhill0) # adds false for all my hills
-        hills.update(self.myhill)  # adds true for my hills which are visible and active
+        hills.update(self.myhill)  # adds true for my visible and active hills
         #
         # query where ants should go
         decidertime = DateTime.now()
@@ -260,7 +270,8 @@ class Bot(object):
                 moves[loc] = (v for v in moves[loc])
             moves[loc] = (antid, moves[loc])
         #
-        # define a function to get the next valid vector from a generator
+        # def for use later:
+        # get next move which doesn't place the ant on water or food
         def poporder(oldloc, vectors):
             try:
                 vector = vectors.next()
@@ -276,6 +287,7 @@ class Bot(object):
         # - single men "moves" oldloc:(identity,[vector])
         # - single women "antplans" any key which isn't set
         # - couples "antplans" newloc:(oldloc,identity,vector,[vector])
+        # sorry about the long lines here...
         self.antplans.clear()
         while moves:
             for aO, (aI, aV) in moves.items():              # each ant "a"
@@ -289,15 +301,16 @@ class Bot(object):
                 else:                                       # if the location is free
                     self.antplans[aN] = (aO, aI, aD, aV)    #   set a claim for "a"
                     del moves[aO]                           #   "a" is no longer single
-##        #
-##        # log elapsed time
-##        if self.logfn:
-##            maxtime = self.game['turntime']
-##            decidertime *= 1000.0
-##            totaltime = (DateTime.now() - self.timer).total_seconds() * 1000.0
-##            self.logfn(
-##                'AntCt: {} Time: {:f}ms of {:.2f}ms; {:f}ms decider, {:f}ms protocol'.format(
-##                len(self.antplans), totaltime, maxtime, decidertime, totaltime - decidertime))
+        #
+        # log elapsed time
+        if self.logfn:
+            maxtime = self.game['turntime']
+            decidertime *= 1000.0
+            totaltime = (DateTime.now() - self.timer).total_seconds() * 1000.0
+            self.logfn('''AntCt: {} Time: {:f}ms of {:.2f}ms; {:f}ms decider,
+                          {:f}ms protocol'''.\
+                          format(len(self.antplans), totaltime, maxtime,
+                          decidertime, totaltime - decidertime))
         #
         # issue orders to ants who are to move
         return ['o {} {} {}'.format(row, col, vector) \

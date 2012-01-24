@@ -260,8 +260,9 @@ class LazyEnvDigest(object):
         '''Do not supplement an ant's orders.'''
         return moves
 
-# Note: The commented and uncommented versions of 'supplement' were used to
-#       study the behavior of Hedgebot by forcing it to work in conditions which
-#       more correctly matched the assumptions of the hedge algorithm.
+# Note: The commented and uncommented versions of 'supplement' were used as
+#       part of a project for school to study the behavior of Hedgebot by
+#       forcing it to work in conditions which more correctly matched the
+#       assumptions of the hedge algorithm.
 # See: https://docs.google.com/document/d/1MB0IAFvgE2BEx4_PUJ1wvHeEERwt_C9YSU4E4FY2gHA/edit
 

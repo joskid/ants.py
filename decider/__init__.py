@@ -2,7 +2,6 @@
 from brownian import Decider as Brownian
 from navigator import Decider as Navigator
 from kmeans import Decider as KMeans
-##from borg import Decider as Borg
 from metadecider import Decider as Hedge
 
 

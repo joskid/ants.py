@@ -7,7 +7,7 @@ import antmath
 '''
 Simple strategy to raze enemy hills.
 
-Tells each ant to move toward enemy hills if there's no enemys adjacent.
+Tells each ant to move toward enemy hills if there are no enemys adjacent.
 
 '''
 

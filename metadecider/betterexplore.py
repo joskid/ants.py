@@ -22,11 +22,6 @@ def genmoves(logfn, game):
 
         for aI, (aN, aO) in env.myid.iteritems():
 
-##            if abs(aN[0] - aO[0]) > 1:
-##                past[aI] = past[aI][0] * -1, past[aI][1]
-##            if abs(aN[1] - aO[1]) > 1:
-##                past[aI] = past[aI][0], past[aI][1] * -1
-
             # weighted average of all previous moves
             if aI in past:
                 aOr, aOc = aO

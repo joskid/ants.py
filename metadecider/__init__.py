@@ -110,7 +110,8 @@ def meta(logfn, game):
             env.food.clear()
         moves = [e.send(env) for e in experts]
 
-#        assert all(env.myid - m.viewkeys() == set() for m in moves)
+        # make sure ants have orders from at least one strategy
+        #assert all(env.myid - m.viewkeys() == set() for m in moves)
 
         # combine the move recommendations into distributions
         # eg:
@@ -148,11 +149,17 @@ def meta(logfn, game):
         env = yield {env.myid[aI][0]: distpicker(vd) \
                      for aI, vd in lincomb.iteritems()}
 
+        # last minute hack: don't process more than 100 ants each turn
+        # unfortunately, this bot is not efficient, and frequently times-out
+        # without this hack
+
         keys = env.myant.keys()
         while len(env.myant) > 100:
             k = random.choice(keys)
             keys.remove(k)
             env.myant.pop(k)
+
+        # assign loss to strategies according to how the ants fared
 
         # for each old-ant:
         #   did any strategy tell the ant to do what it did?

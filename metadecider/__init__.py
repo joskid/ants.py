@@ -61,16 +61,16 @@ class Decider(object):
 
 
 EXPERTS = (
-    betterexplore, # not in comp #7
+    #betterexplore, # not in comp #7
     brownian,
     clump,
     defend,
     explore,
     foodcalling,
-    glomfood, # not in comp #7
+    #glomfood, # not in comp #7
     glomhill,
     keepdistance,
-    mob, # not in comp #7
+    #mob, # not in comp #7
     movein,
     stayoffhill,
     unstuck,
